@@ -2,11 +2,12 @@ from ultralytics import YOLO
 import cv2
 
 # Load the YOLO model
-model = YOLO('/Users/matthewxrao/Bench-Buddy/best.pt')
+model = YOLO('/Users/matthewxrao/Bench-Buddy/v11.pt')
 
 def detect_objects(frame, output_width, output_height):
     # Perform object detection
-    results = model(frame)
+    results = model(frame, conf=0.3, batch=10, device='mps')
+    # Initialize detection flags
     ballDetected = False
     rimDetected = False
     shotMadeDetected = False
@@ -16,23 +17,19 @@ def detect_objects(frame, output_width, output_height):
         boxes = r.boxes
         
         for box in boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])  # Extract coordinates
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
             cls = int(box.cls[0])
-            
-            # Draw boxes on detected objects (optional)
-            color = (255, 0, 0)  # Default color: red
-            if cls == 0:  # Ball
+
+            color = None
+            if cls == 0:  # {Ball:0, ShotMade:1, Person:2 Rim:3, Shot:4}
                 ballDetected = True
-                color = (0, 255, 0)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            elif cls == 3:  # Rim
+                
+            elif cls == 3: 
                 rimDetected = True
-                color = (0, 0, 255)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            elif cls == 1:  # Made Shot
+                
+            elif cls == 1: 
                 shotMadeDetected = True
-                color = (255, 255, 0)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+               
     
     # Get the original dimensions of the frame
     h, w = frame.shape[:2]
