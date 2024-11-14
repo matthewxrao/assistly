@@ -1,22 +1,23 @@
 from cmu_graphics import *
+from loadAudios import getCrowdNoise
+from objectDetection import detect_objects
+import cmu_graphics
 import cv2
 import threading
-from rim_ballDetection import detect_objects
 import queue
+import pyfonts
 
 def onAppStart(app):
-    app.height = 1920
-    app.width = 1080
+    app.width = 680
+    app.height = 420
     app.message = "Press Space to Start"
     app.shotMade = False
     app.ballStatus = False
     app.rimStatus = False
     app.steps = 0
-    app.frame_image = None 
-    import pathlib
-    local_path = "/Users/matthewxrao/Bench-Buddy/audios/people2.mp3"
-    file_url = pathlib.Path(local_path).as_uri()
-    app.sound = Sound(file_url)
+    app.frame_image = None
+    app.crowd = 'people'
+    app.crowdSound = Sound(getCrowdNoise(app.crowd))
 
 def start_onKeyPress(app, key):
     if key == 'space':
@@ -24,7 +25,7 @@ def start_onKeyPress(app, key):
 
 def start_redrawAll(app):
     centerX, centerY = app.width // 2, app.height // 2
-    drawLabel(app.message, centerX, centerY, size=25, font="orbitron")
+    drawLabel(app.message, centerX, centerY, size=25, font='montserrat', bold=True)
 
 def capture_onScreenActivate(app):
     startCaptureThread(app)
@@ -40,10 +41,12 @@ def capture_onStep(app):
         app.rimStatus = rimDetected
         app.shotMade = shotMadeDetected
         app.frame_image = convert_frame_to_url(frame_with_detections)   
-    step(app)
+        step(app)
 
 def step(app):
     app.steps += 1
+    if app.steps % 100 == 0:
+        app.crowdSound = Sound(getCrowdNoise(app.crowd))
 
 def startCaptureThread(app):
     # Create a new thread to handle video capture
@@ -91,7 +94,7 @@ def capture_redrawAll(app):
     if app.shotMade:
         drawRect(centerX - 150, centerY - 50, 300, 100, fill='red')
         drawLabel("Shot Made", centerX, centerY, size=40, fill='white', align='center')
-        app.sound.play(restart=False, loop=False)
+        app.crowdSound.play(restart=False, loop=False)
 
 def drawBallStatus(app):
     statusRadius = 8
@@ -101,7 +104,7 @@ def drawBallStatus(app):
     ballStatusMessage = "BALL DETECTED" if app.ballStatus else "BALL NOT DETECTED"
     ballStatusColor = 'green' if app.ballStatus else 'red'
     drawCircle(ballStatusX, ballStatusY, statusRadius, fill=ballStatusColor)
-    drawLabel(ballStatusMessage, ballStatusX - gap, ballStatusY, font="orbitron", size=20, align="right")
+    drawLabel(ballStatusMessage, ballStatusX - gap, ballStatusY, font="orbitron", size=15, align="right")
 
 
 def drawRimStatus(app):
@@ -120,11 +123,13 @@ def drawRimStatus(app):
         drawImage(app.frame_image, rimFillX, rimFillY)
     else:
         drawRect(rimFillX, rimFillY, rimFillWidth, rimFillHeight,  fill = "white")
-        drawLabel(app.message, centerX, centerY, size=25)
-    drawLabel(rimStatusText, rimBoxX, rimBoxY - 15, size=20, font="orbitron",align="left")
+        drawLabel(app.message, centerX, centerY, size=20)
+    drawLabel(rimStatusText, rimBoxX, rimBoxY - 15, size=15, font="orbitron",align="left")
 
 def main():
     runAppWithScreens(initialScreen='start')
 
 if __name__ == "__main__":
     main()
+
+cmu_graphics.run()

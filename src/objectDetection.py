@@ -6,8 +6,7 @@ model = YOLO('/Users/matthewxrao/Bench-Buddy/v11.pt')
 
 def detect_objects(frame, output_width, output_height):
     # Perform object detection
-    results = model(frame, conf=0.3, batch=10, device='mps')
-    # Initialize detection flags
+    results = model(frame, conf=0.6, batch=10, device='mps')
     ballDetected = False
     rimDetected = False
     shotMadeDetected = False
@@ -19,16 +18,21 @@ def detect_objects(frame, output_width, output_height):
         for box in boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cls = int(box.cls[0])
-
+            
             color = None
             if cls == 0:  # {Ball:0, ShotMade:1, Person:2 Rim:3, Shot:4}
                 ballDetected = True
-                
+                color = (0, 255, 0)  
             elif cls == 3: 
                 rimDetected = True
+                color = (255, 0, 0)
                 
             elif cls == 1: 
                 shotMadeDetected = True
+                color = (0, 0, 255)
+            
+            if color:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                
     
     # Get the original dimensions of the frame
