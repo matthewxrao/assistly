@@ -5,7 +5,6 @@ import cmu_graphics
 import cv2
 import threading
 import queue
-import pyfonts
 
 def onAppStart(app):
     app.width = 680
