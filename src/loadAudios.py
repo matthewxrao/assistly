@@ -2,7 +2,7 @@ import pathlib
 import random
 
 
-peoplePath = pathlib.Path('/Users/matthewxrao/Bench-Buddy/audios/people')
+peoplePath = pathlib.Path('audios/people').resolve()
 
 # Collect all `.mp3` files in the folder
 peopleAudios = [file.as_uri() for file in peoplePath.glob('*.mp3')]
