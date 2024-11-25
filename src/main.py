@@ -3,12 +3,36 @@ from loadAudios import getCrowdNoise
 from objectDetection import detectObjects
 import cv2
 import threading
-import queue
+import time
+import queue 
+import visualEffects
+
+#|************************| INITIALIZE APP |************************|#
 
 def onAppStart(app):
-    app.width = 680
-    app.height = 420
-    app.message = "Press Space to Start"
+    app.width = 650
+    app.height = 450
+    # Initialize camera feed dimensions and positions
+    app.camFeedGap = 5
+    app.camFeedOutlineLeft = 50
+    app.camFeedOutlineTop = 115
+    app.camFeedOutlineWidth = app.width - 2 * app.camFeedOutlineLeft
+    app.camFeedOutlineHeight = 275
+    
+    # Calculate actual camera feed dimensions based on outline and gap
+    app.camFeedLeft = app.camFeedOutlineLeft + app.camFeedGap
+    app.camFeedTop = app.camFeedOutlineTop + app.camFeedGap
+    app.camFeedWidth = app.camFeedOutlineWidth - 2 * app.camFeedGap
+    app.camFeedHeight = app.camFeedOutlineHeight - 2 * app.camFeedGap
+    
+    # Initialize shot tracking statistics and streaks
+    app.totalShots = 0
+    app.madeShots = 0
+    app.shotPercentage = 0
+    app.currentStreak = 0
+    app.bestStreak = 0
+    
+    app.message = "Click to begin"
     app.shotMade = False
     app.ballStatus = False
     app.rimStatus = False
@@ -16,37 +40,77 @@ def onAppStart(app):
     app.frameImage = None
     app.crowd = 'people'
     app.crowdSound = Sound(getCrowdNoise(app.crowd))
-    app.background = 'black'
+    app.background = rgb(23, 23, 23)
+    app.setMaxShapeCount(10000)
 
-    # Initialize queue for MVC-safe frame updating
     app.frameQueue = queue.Queue()
-    
-    # Frame threshold for stickier rim and ball detection
     app.ballDetectionPersistenceThreshold = 40
     app.rimDetectionPersistenceThreshold = 20
-    app.shotMadePersistenceThreshold = 10
+    app.shotMadePersistenceThreshold = 15  # Increased threshold
 
-    # Initialize counters for ball and rim detection beginning at threshold
     app.ballDetectionCounter = app.ballDetectionPersistenceThreshold  
     app.rimDetectionCounter = app.rimDetectionPersistenceThreshold
     app.shotMadeDetectionCounter = app.shotMadePersistenceThreshold
-    
 
-def start_onKeyPress(app, key):
-    if key == 'space':
-        setActiveScreen('capture')
+    visualEffects.init_fissure(app)
+
+#|************************| START SCREEN |************************|#
+
+def start_onMousePress(app, x, y):
+    setActiveScreen('tip')
 
 def start_redrawAll(app):
     centerX, centerY = app.width // 2, app.height // 2
+    left, top = (app.width - 350) // 2, (app.height - 350) // 2
+
+    drawImage("images/logo.png", left, top)
+    drawLabel(app.message, centerX, centerY + 75, size=25, font='montserrat', fill='white', bold=True)
+
+#|************************| TIP SCREEN |************************|#
+
+
+def tip_onScreenActivate(app):
+    app.message = "I understand it now"
+
+def tip_onMousePress(app, x, y):
+    setActiveScreen('liveView')
+
+def tip_redrawAll(app):
+    centerX, centerY = app.width // 2, app.height // 2
     drawLabel(app.message, centerX, centerY, size=25, font='montserrat', fill='white', bold=True)
 
-def capture_onScreenActivate(app):
+#|************************| LIVEVIEW SCREEN |************************|#
+
+def liveView_onScreenActivate(app):
     startCaptureThread(app)
     app.message = 'NO CAMERA INPUT'
 
-def capture_onStep(app):
+def liveView_onKeyPress(app, key):
+    if key == 'm': 
+        simulateShotMade(app)
+    elif key == 's':  # Record a missed shot
+        app.totalShots += 1
+        app.currentStreak = 0  # Reset streak on missed shot
+        updateShotPercentage(app)
+
+# Update shooting percentage based on makes/total
+def updateShotPercentage(app):
+    if app.totalShots > 0:
+        app.shotPercentage = (app.madeShots / app.totalShots) * 100
+    else:
+        app.shotPercentage = 0
+
+# Update consecutive makes streak
+def updateStreak(app, made):
+    if made:
+        app.currentStreak += 1
+        if app.currentStreak > app.bestStreak:
+            app.bestStreak = app.currentStreak
+    else:
+        app.currentStreak = 0
+
+def liveView_onStep(app):
     if not app.frameQueue.empty():
-        # Get the latest data from the queue
         ballDetected, rimDetected, shotMadeDetected, frame_with_detections = app.frameQueue.get()
 
         if ballDetected:
@@ -58,11 +122,16 @@ def capture_onStep(app):
         else:
             app.rimDetectionCounter += 1
         if shotMadeDetected:
-            app.shotMadeDetectionCounter = 0
+            if app.shotMadeDetectionCounter > app.shotMadePersistenceThreshold:
+                app.shotMadeDetectionCounter = 0
+                app.madeShots += 1
+                app.totalShots += 1
+                updateShotPercentage(app)
+                updateStreak(app, True)
+                triggerEffects(app)
         else:
             app.shotMadeDetectionCounter += 1
 
-        # Only update when persistence threshold is met
         app.ballStatus = app.ballDetectionCounter < app.ballDetectionPersistenceThreshold
         app.rimStatus = app.rimDetectionCounter < app.rimDetectionPersistenceThreshold
         app.shotMade = app.shotMadeDetectionCounter < app.shotMadePersistenceThreshold
@@ -70,24 +139,43 @@ def capture_onStep(app):
         app.frameImage = convert_frame_to_url(frame_with_detections)   
         step(app)
 
+    visualEffects.update_fissure(app, time.time())
+
+def triggerEffects(app):
+    current_time = time.time()
+    visualEffects.trigger_fissure(app, current_time)
+    app.crowdSound.play(restart=False, loop=False)
+
+def simulateShotMade(app):
+    app.shotMade = True
+    app.madeShots += 1
+    app.totalShots += 1
+    updateShotPercentage(app)
+    updateStreak(app, True)
+    triggerEffects(app)
+
 def step(app):
     app.steps += 1
     if app.steps % 100 == 0:
         app.crowdSound = Sound(getCrowdNoise(app.crowd))
 
+# Converts frame to image URL displayable through CMU Graphics
+def convert_frame_to_url(frame):
+    temp_path = "tempFrame.jpg"
+    cv2.imwrite(temp_path, frame)
+    return temp_path
+
+# Starts MVC safe threading for live feed capture
 def startCaptureThread(app):
     capture_thread = threading.Thread(target=getFrames, args=(app,))
     capture_thread.daemon = True 
     capture_thread.start()
 
-
-
+# Frame by frame live feed capture with object detection
 def getFrames(app):
-    video = 'tests/test2.mp4' # Test Purposes Only
+    video = 'tests/test1.mp4'
+    cam = cv2.VideoCapture(video) 
 
-    # Initialize video capture
-    cam = cv2.VideoCapture(0) 
-    
     if not cam.isOpened():
         print("Error: Could not open video.")
         return
@@ -96,70 +184,79 @@ def getFrames(app):
         ret, frame = cam.read()
         if not ret:
             break
-        frameX, frameY = app.width - 160, app.height - 110
-        # Detect objects in the frame
-        ballDetected, rimDetected, shotMadeDetected, frame_with_detections = detectObjects(frame, frameX, frameY)
         
-        # Update status in a thread-safe way
+        frameX, frameY = app.camFeedWidth, app.camFeedHeight
+
+        ballDetected, rimDetected, shotMadeDetected, frame_with_detections = detectObjects(frame, frameX, frameY)
         app.frameQueue.put((ballDetected, rimDetected, shotMadeDetected, frame_with_detections))
         
     cam.release()
 
-# Function to convert cv2 frame to create temp image URL displayable in cmu_graphics
-def convert_frame_to_url(frame):
-    temp_path = "tempFrame.jpg"
-    cv2.imwrite(temp_path, frame)
-    return temp_path
+def liveView_redrawAll(app):
+    left = (app.width - 75) // 2
+    drawImage("images/LittleLogo.png", left, -10)
+    visualEffects.draw_fissure(app)
+    drawCameraFeed(app)
+    drawShotStats(app)
 
-def capture_redrawAll(app):
-    drawFeed(app)
-
-    centerX, centerY = app.width // 2, app.height // 2
-
+# Draw shot statistics and streak counters at the bottom of the screen
+def drawShotStats(app):
+    # Draw basic shot statistics
+    statsY = app.height - 20
+    drawLabel(f"Total Shots: {app.totalShots}", 
+             app.camFeedOutlineLeft + 5, statsY, 
+             size=12, font="orbitron", align="left", fill='white')
     
-def drawFeed(app):
-    # Ball Status
+    drawLabel(f"Made Shots: {app.madeShots}", 
+             app.width//2, statsY, 
+             size=12, font="orbitron", align="center", fill='white')
+    
+    drawLabel(f"Shot %: {app.shotPercentage:.1f}%", 
+             app.camFeedOutlineLeft + app.camFeedOutlineWidth - 5, statsY, 
+             size=12, font="orbitron", align="right", fill='white')
+    
+    # Draw streak information
+    streakY = statsY - 25
+    streakColor = 'orange' if app.currentStreak >= 3 else 'white'  # Highlight hot streaks
+    
+    drawLabel(f"Current Streak: {app.currentStreak}", 
+             app.width//4, streakY, 
+             size=12, font="orbitron", align="center", fill=streakColor)
+    
+    drawLabel(f"Best Streak: {app.bestStreak}", 
+             3*app.width//4, streakY, 
+             size=12, font="orbitron", align="center", fill='white')
+
+# Draw camera feed with status indicators
+def drawCameraFeed(app):
     statusRadius = 5
-    ballStatusX, ballStatusY = app.width - 140, 15
+    ballStatusX, statusY = app.camFeedOutlineLeft + app.camFeedOutlineWidth - 5 , app.camFeedOutlineTop - 10
 
     ballStatusText = "BALL DETECTED" if app.ballStatus else "BALL NOT DETECTED"
     ballStatusColor = rgb(144, 238, 144) if app.ballStatus else 'orange'
 
-    # Rim Status
-    outlineLeft, outlineTop = 20, 25
-    outlineWidth, outlineHeight = app.width - 150, app.height - 100
-    outlineColor = gradient( 'lightSlateGray','white', 'lightskyblue', 'black') if app.rimStatus else gradient( 'gray','lightgray', 'black')
+    outlineColor = gradient('gray','lightgray', app.background) if app.rimStatus else gradient('gray','black', app.background)
     rimStatusText = "RIM DETECTED" if app.rimStatus or app.shotMade else "RIM NOT DETECTED"
-    centerX, centerY = outlineLeft + outlineWidth // 2, outlineTop + outlineHeight // 2 
+    centerX = app.camFeedOutlineLeft + app.camFeedOutlineWidth // 2
+    centerY = app.camFeedOutlineTop + app.camFeedOutlineHeight // 2
 
-    # Overide Outline Color if Shot Made
     if app.shotMade:
-        app.crowdSound.play(restart=False, loop=False)
-        outlineColor = gradient( 'lightSlateGray','white', 'lemonChiffon', 'black')
+        outlineColor = gradient('lightSlateGray','white', 'lightskyblue', app.background)
 
-    # Camera Feed
-    gap = 5
-    camFeedLeft, camFeedTop = outlineLeft + gap, outlineTop + gap
-    camFeedWidth, camFeedHeight = outlineWidth - 2 * gap, outlineHeight - 2 * gap
-
-
-    # Draw the ball status
-    drawCircle(ballStatusX, ballStatusY, statusRadius, fill=ballStatusColor)
-    drawLabel(ballStatusText, ballStatusX - 12, ballStatusY, font="orbitron", size=12, align="right", fill='white')
+    drawCircle(ballStatusX, statusY, statusRadius, fill=ballStatusColor)
+    drawLabel(ballStatusText, ballStatusX - 12, statusY, font="orbitron", size=10, align="right", fill='white')
     
-    # Draw the outline
-    drawRect(outlineLeft, outlineTop, outlineWidth, outlineHeight,  fill = outlineColor)
-    drawLabel(rimStatusText, outlineLeft + 5, 15, size=12, font="orbitron",align="left", fill='white')
+    drawRect(app.camFeedOutlineLeft, app.camFeedOutlineTop, app.camFeedOutlineWidth, app.camFeedOutlineHeight, fill=outlineColor)
+    drawLabel(rimStatusText, app.camFeedOutlineLeft + 5, statusY, size=10, font="orbitron", align="left", fill='white')
 
-    # Draw the camera feed
     if app.frameImage is not None:
-        drawImage(app.frameImage, camFeedLeft, camFeedTop)
+        drawImage(app.frameImage, app.camFeedLeft, app.camFeedTop)
     else:
-        drawRect(camFeedLeft, camFeedTop, camFeedWidth, camFeedHeight,  fill = app.background)
-        drawLabel(app.message, centerX, centerY, size=20, fill='white')
+        drawRect(app.camFeedLeft, app.camFeedTop, app.camFeedWidth, app.camFeedHeight, fill=app.background)
+        drawLabel(app.message, centerX, centerY, size=12, fill='white')
 
 def main():
     runAppWithScreens(initialScreen='start')
-
-if __name__ == "__main__":
+ 
+if __name__ == "__main__":  
     main()
