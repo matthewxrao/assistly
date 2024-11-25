@@ -6,7 +6,7 @@ import numpy as np
 from ekf import ExtendedKalmanFilter
 
 # Initialize YOLO model
-model = YOLO('/Users/matthewxrao/Bench-Buddy/v11.pt')
+model = YOLO('v11.pt')
 detClasses = {0: 'Ball', 1: 'Made Shot', 2: 'Person', 3: 'Rim', 4: 'Shot'}
 
 # Initialize EKF for ball tracking
@@ -51,7 +51,7 @@ def detectObjects(frame, outputWidth, outputHeight):
             if color:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(frame, detClasses[cls].upper(), (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 2)
 
     # Prediction Step
     ekf.predict()

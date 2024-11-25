@@ -210,7 +210,7 @@ class LightningStrike:
         drawLine(x1, y1, x2, y2, fill=color, opacity=opacity, lineWidth=glow_width)
         
         # White core
-        drawLine(x1, y1, x2, y2, fill='white', lineWidth=1.2 if is_main else 0.6)  # Thinner core
+        drawLine(x1, y1, x2, y2, fill='white', lineWidth=2 if is_main else 1)  # Thinner core
 
 # Initialize multiple lightning bolts
 def init_fissure(app):
@@ -218,33 +218,47 @@ def init_fissure(app):
         LightningStrike(
             app.width * 0.2,
             10,
-            max_length=app.height, 
+            max_length=app.height * 0.9, 
             duration=0.5,
             lean_direction=1
         ),
         LightningStrike(
             app.width * 0.4,
             10,
-            max_length=app.height * 0.8,
+            max_length=app.height * 0.9,
             duration=0.5,
             lean_direction=-0.5
+        ),
+        LightningStrike(
+            app.width * 0.6,
+            10,
+            max_length=app.height * 0.3,
+            duration=0.5,
+            lean_direction=1
         ),
         LightningStrike(
             app.width * 0.6,
             10,
             max_length=app.height * 0.4,
             duration=0.5,
-            lean_direction=-0.5
+            lean_direction=0.5
         ),
         LightningStrike(
             app.width * 0.6,
             10,
-            max_length=app.height * 0.6,
+            max_length=app.height * 0.3,
             duration=0.5,
-            lean_direction=-0.5
+            lean_direction=0.5
+        ),
+        LightningStrike(
+            app.width * 0.6,
+            10,
+            max_length=app.height * 0.4,
+            duration=0.5,
+            lean_direction=-1
         ),
     ]
-    app.strike_delays = [0, 0.05, 0.1, 0.15]
+    app.strike_delays = [0, 0.3, 0.06, 0.09, 0.12, 0.15]
 
 # Start all lightning strikes with delays
 def trigger_fissure(app, current_time):

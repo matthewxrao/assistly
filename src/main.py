@@ -6,12 +6,14 @@ import threading
 import time
 import queue 
 import visualEffects
+from pyfonts import *
 
 #|************************| INITIALIZE APP |************************|#
 
 def onAppStart(app):
     app.width = 650
     app.height = 450
+    
     # Initialize camera feed dimensions and positions
     app.camFeedGap = 5
     app.camFeedOutlineLeft = 50
@@ -52,64 +54,79 @@ def onAppStart(app):
     app.rimDetectionCounter = app.rimDetectionPersistenceThreshold
     app.shotMadeDetectionCounter = app.shotMadePersistenceThreshold
 
+    # Initialize buttons dictionary with screen-specific button coordinates
+    spacing = 10
+    buttonWidth = (app.camFeedOutlineWidth - 2 * spacing) // 3
+    startX = app.camFeedOutlineLeft
+    
+    app.buttons = {
+        'continue': {
+            'left': app.width//2 - 65,
+            'top': (app.height//2 + 90),
+            'right': app.width//2 + 65,
+            'bottom': (app.height//2 + 110),
+            'opacity': 100
+        },
+        'liveView': {
+            'left': startX,
+            'top': 50,
+            'right': startX + buttonWidth,
+            'bottom': 80,
+            'opacity': 100
+        },
+        'statistics': {
+            'left': startX + buttonWidth + spacing,
+            'top': 50,
+            'right': startX + 2*buttonWidth + spacing,
+            'bottom': 80,
+            'opacity': 100
+        },
+        'sounds': {
+            'left': startX + 2*buttonWidth + 2*spacing,
+            'top': 50,
+            'right': startX + 3*buttonWidth + 2*spacing,
+            'bottom': 80,
+            'opacity': 100
+        }
+    }
+    
+    app.currentTab = 'liveView'
     visualEffects.init_fissure(app)
 
-#|************************| START SCREEN |************************|#
+#|************************| APP FUNCTIONS |************************|#
+def drawTabButtons(app):
+    for name, coords in app.buttons.items():
+        if name == "continue":
+            continue
+        buttonFill = 'gray' if name == app.currentTab else 'white'
+        textFill = 'white' if name == app.currentTab else app.background
+        drawRect(coords['left'], coords['top'], 
+                coords['right'] - coords['left'], 
+                coords['bottom'] - coords['top'], 
+                fill=buttonFill, border='gray')
+        drawLabel(name.title(), 
+                (coords['left'] + coords['right'])/2,
+                (coords['top'] + coords['bottom'])/2,
+                size=12, font='montserrat', 
+                fill=textFill)
+        
+def drawAssets(app):
+    left = (app.width - 75) // 2
+    visualEffects.draw_fissure(app)
+    drawImage("images/LittleLogo.png", left, -10)
 
-def start_onMousePress(app, x, y):
-    setActiveScreen('tip')
 
-def start_redrawAll(app):
-    centerX, centerY = app.width // 2, app.height // 2
-    left, top = (app.width - 350) // 2, (app.height - 350) // 2
+def tabPress(app, x, y):
+    for name, coords in app.buttons.items():
+        if name == "continue":
+            continue
+        if (coords['left'] <= x <= coords['right'] and 
+            coords['top'] <= y <= coords['bottom']):
+            if name != app.currentTab:
+                app.currentTab = name
+                setActiveScreen(name)
 
-    drawImage("images/logo.png", left, top)
-    drawLabel(app.message, centerX, centerY + 75, size=25, font='montserrat', fill='white', bold=True)
-
-#|************************| TIP SCREEN |************************|#
-
-
-def tip_onScreenActivate(app):
-    app.message = "I understand it now"
-
-def tip_onMousePress(app, x, y):
-    setActiveScreen('liveView')
-
-def tip_redrawAll(app):
-    centerX, centerY = app.width // 2, app.height // 2
-    drawLabel(app.message, centerX, centerY, size=25, font='montserrat', fill='white', bold=True)
-
-#|************************| LIVEVIEW SCREEN |************************|#
-
-def liveView_onScreenActivate(app):
-    startCaptureThread(app)
-    app.message = 'NO CAMERA INPUT'
-
-def liveView_onKeyPress(app, key):
-    if key == 'm': 
-        simulateShotMade(app)
-    elif key == 's':  # Record a missed shot
-        app.totalShots += 1
-        app.currentStreak = 0  # Reset streak on missed shot
-        updateShotPercentage(app)
-
-# Update shooting percentage based on makes/total
-def updateShotPercentage(app):
-    if app.totalShots > 0:
-        app.shotPercentage = (app.madeShots / app.totalShots) * 100
-    else:
-        app.shotPercentage = 0
-
-# Update consecutive makes streak
-def updateStreak(app, made):
-    if made:
-        app.currentStreak += 1
-        if app.currentStreak > app.bestStreak:
-            app.bestStreak = app.currentStreak
-    else:
-        app.currentStreak = 0
-
-def liveView_onStep(app):
+def takeStep(app):
     if not app.frameQueue.empty():
         ballDetected, rimDetected, shotMadeDetected, frame_with_detections = app.frameQueue.get()
 
@@ -138,32 +155,45 @@ def liveView_onStep(app):
 
         app.frameImage = convert_frame_to_url(frame_with_detections)   
         step(app)
-
-    visualEffects.update_fissure(app, time.time())
-
-def triggerEffects(app):
-    current_time = time.time()
-    visualEffects.trigger_fissure(app, current_time)
-    app.crowdSound.play(restart=False, loop=False)
-
-def simulateShotMade(app):
-    app.shotMade = True
-    app.madeShots += 1
-    app.totalShots += 1
-    updateShotPercentage(app)
-    updateStreak(app, True)
-    triggerEffects(app)
+        visualEffects.update_fissure(app, time.time())
 
 def step(app):
     app.steps += 1
-    if app.steps % 100 == 0:
+    if app.steps % 30 == 0:
         app.crowdSound = Sound(getCrowdNoise(app.crowd))
+#|************************| START SCREEN |************************|#
 
-# Converts frame to image URL displayable through CMU Graphics
-def convert_frame_to_url(frame):
-    temp_path = "tempFrame.jpg"
-    cv2.imwrite(temp_path, frame)
-    return temp_path
+def start_onMousePress(app, x, y):
+    setActiveScreen('tip')
+
+def start_redrawAll(app):
+    centerX, centerY = app.width // 2, app.height // 2
+    left, top = (app.width - 350) // 2, (app.height - 350) // 2
+
+    drawImage("images/logo.png", left, top)
+    drawLabel(app.message, centerX, centerY + 75, size=25, font='app.geo', fill='white', bold=True)
+
+#|************************| TIP SCREEN |************************|#
+
+
+def tip_onScreenActivate(app):
+    app.message = "I UNDERSTAND IT NOW"
+
+def tip_onMousePress(app, x, y):
+    continueButton = app.buttons['continue']
+    if (continueButton['left'] <= x <= continueButton['right'] and 
+        continueButton['top'] <= y <= continueButton['bottom']):
+        startCaptureThread(app)
+        setActiveScreen('liveView')
+
+def tip_onMouseMove(app, x, y):
+    continueButton = app.buttons['continue']
+    if (continueButton['left'] <= x <= continueButton['right'] and 
+        continueButton['top'] <= y <= continueButton['bottom']):
+        continueButton['opacity'] = 80
+    else:
+        continueButton['opacity'] = 100
+
 
 # Starts MVC safe threading for live feed capture
 def startCaptureThread(app):
@@ -191,11 +221,83 @@ def getFrames(app):
         app.frameQueue.put((ballDetected, rimDetected, shotMadeDetected, frame_with_detections))
         
     cam.release()
+        
+
+def tip_redrawAll(app):
+    centerX, y = app.width // 2, (app.height // 2) + 100
+    drawAssets(app)
+    drawLabel("TIP", 10, 10, size=15, font='app.geo', fill='white', bold=True)
+    drawContinueButton(app, centerX, y)
+    
+
+def drawContinueButton(app, x, y):
+    continueButton = app.buttons['continue']
+    drawRect(continueButton['left'], continueButton['top'], 
+            continueButton['right'] - continueButton['left'], 
+            continueButton['bottom'] - continueButton['top'], 
+            fill="white",
+            opacity=continueButton['opacity'])
+    drawLabel(app.message, x, y, size=10, font='montserrat', 
+             fill=app.background, bold=True, align="center")
+
+#|************************| LIVEVIEW SCREEN |************************|#
+
+def liveView_onScreenActivate(app):
+    app.currentTab = 'liveView'
+    app.message = 'NO CAMERA INPUT'
+
+def liveView_onKeyPress(app, key):
+    if key == 'm': 
+        simulateShotMade(app)
+    elif key == 's':  # Record a missed shot
+        app.totalShots += 1
+        app.currentStreak = 0  # Reset streak on missed shot
+        updateShotPercentage(app)
+
+def liveView_onMousePress(app, x, y):
+    tabPress(app, x, y)
+
+# Update shooting percentage based on makes/total
+def updateShotPercentage(app):
+    if app.totalShots > 0:
+        app.shotPercentage = (app.madeShots / app.totalShots) * 100
+    else:
+        app.shotPercentage = 0
+
+# Update consecutive makes streak
+def updateStreak(app, made):
+    if made:
+        app.currentStreak += 1
+        if app.currentStreak > app.bestStreak:
+            app.bestStreak = app.currentStreak
+    else:
+        app.currentStreak = 0
+
+# Converts frame to image URL displayable through CMU Graphics
+def convert_frame_to_url(frame):
+    temp_path = "tempFrame.jpg"
+    cv2.imwrite(temp_path, frame)
+    return temp_path
+
+def liveView_onStep(app):
+    takeStep(app)
+
+def triggerEffects(app):
+    current_time = time.time()
+    visualEffects.trigger_fissure(app, current_time)
+    app.crowdSound.play(restart=False, loop=False)
+
+def simulateShotMade(app):
+    app.shotMade = True
+    app.madeShots += 1
+    app.totalShots += 1
+    updateShotPercentage(app)
+    updateStreak(app, True)
+    triggerEffects(app)
 
 def liveView_redrawAll(app):
-    left = (app.width - 75) // 2
-    drawImage("images/LittleLogo.png", left, -10)
-    visualEffects.draw_fissure(app)
+    drawAssets(app)
+    drawTabButtons(app)
     drawCameraFeed(app)
     drawShotStats(app)
 
@@ -205,7 +307,7 @@ def drawShotStats(app):
     statsY = app.height - 20
     drawLabel(f"Total Shots: {app.totalShots}", 
              app.camFeedOutlineLeft + 5, statsY, 
-             size=12, font="orbitron", align="left", fill='white')
+             size=12, font="Noto Sans", align="left", fill='white')
     
     drawLabel(f"Made Shots: {app.madeShots}", 
              app.width//2, statsY, 
@@ -254,6 +356,36 @@ def drawCameraFeed(app):
     else:
         drawRect(app.camFeedLeft, app.camFeedTop, app.camFeedWidth, app.camFeedHeight, fill=app.background)
         drawLabel(app.message, centerX, centerY, size=12, fill='white')
+    
+#|************************| STATISTICS SCREEN |************************|#
+
+def statistics_onScreenActivate(app):
+    app.currentTab = 'statistics'
+
+def statistics_onStep(app):
+    takeStep(app)
+
+def statistics_onMousePress(app, x, y):
+    tabPress(app, x, y)
+
+def statistics_redrawAll(app):
+    drawAssets(app)
+    drawTabButtons(app)
+
+#|************************| SOUNDS SCREEN |************************|#
+
+def sounds_onScreenActivate(app):
+    app.currentTab = 'sounds'
+
+def statistics_onStep(app):
+    takeStep(app)
+
+def sounds_onMousePress(app, x, y):
+    tabPress(app, x, y)
+
+def sounds_redrawAll(app):
+    drawAssets(app)
+    drawTabButtons(app)
 
 def main():
     runAppWithScreens(initialScreen='start')
