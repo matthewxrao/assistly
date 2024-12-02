@@ -1,8 +1,10 @@
+import pathlib
 from cmu_graphics import *
 from loadAudios import getCrowdNoise
 from objectDetection import detectObjects
 from ekf import ExtendedKalmanFilter
 import cv2
+import random
 import threading
 import time
 import queue 
@@ -12,7 +14,7 @@ import visualEffects
 
 def onAppStart(app):
     app.width = 650
-    app.height = 450
+    app.height = 460
     
     # Initialize camera feed dimensions and positions
     app.camFeedGap = 5
@@ -40,7 +42,7 @@ def onAppStart(app):
     app.rimStatus = False
     app.steps = 0
     app.frameImage = None
-    app.crowd = 'people'
+    app.crowd = 'humans'
     app.crowdSound = Sound(getCrowdNoise(app.crowd))
     app.background = rgb(23, 23, 23)
     app.setMaxShapeCount(10000)
@@ -73,7 +75,13 @@ def onAppStart(app):
     app.historyTop = app.camFeedOutlineTop + 30
     app.historyWidth = 200
     app.historyHeight = 150
+    app.currentTab = 'liveView'
+    visualEffects.init_fissure(app)
+    setSoundButtons(app)
+    setTabButtons(app)
 
+
+def setTabButtons(app):
     # Initialize buttons dictionary with screen-specific button coordinates
     spacing = 10
     buttonWidth = (app.camFeedOutlineWidth - 2 * spacing) // 3
@@ -82,9 +90,9 @@ def onAppStart(app):
     app.buttons = {
         'continue': {
             'left': app.width//2 - 65,
-            'top': (app.height//2 + 90),
+            'top': (app.height//2 + 105),
             'right': app.width//2 + 65,
-            'bottom': (app.height//2 + 110),
+            'bottom': (app.height//2 + 125),
             'opacity': 100
         },
         'liveView': {
@@ -109,9 +117,45 @@ def onAppStart(app):
             'opacity': 100
         }
     }
+
+def setSoundButtons(app):
+    paddingY = 30
+    paddingX = 30
+    buttonWidth = (app.camFeedOutlineWidth - 2) // 2 - paddingX//2
+    buttonHeight = (app.camFeedOutlineHeight + 20)//2 - paddingY//2
     
-    app.currentTab = 'liveView'
-    visualEffects.init_fissure(app)
+    baseLeft = app.camFeedOutlineLeft
+    baseTop = app.camFeedOutlineTop
+    app.soundButtons = {
+        'humans': {
+            'left': baseLeft,
+            'top': baseTop,
+            'right': baseLeft + buttonWidth,
+            'bottom': baseTop + buttonHeight,
+            'opacity': 60
+        },
+        'dogs' : {
+            'left': baseLeft + buttonWidth + paddingX,
+            'top': baseTop,
+            'right': baseLeft + 2*buttonWidth + paddingX,
+            'bottom': baseTop + buttonHeight,
+            'opacity': 60
+        },
+        'minions' : {
+            'left': baseLeft,
+            'top': baseTop + buttonHeight + paddingY,
+            'right': baseLeft + buttonWidth,
+            'bottom': baseTop + 2*buttonHeight + paddingY,
+            'opacity': 60
+        },
+        'cows' : {
+            'left': baseLeft + buttonWidth + paddingX,
+            'top': baseTop + buttonHeight + paddingY,
+            'right': baseLeft + 2*buttonWidth + paddingX,
+            'bottom': baseTop + 2*buttonHeight + paddingY,
+            'opacity': 60
+        }
+    }
 
 # Converts frame to image URL displayable through CMU Graphics
 def convert_frame_to_url(frame):
@@ -203,7 +247,7 @@ def takeStep(app):
 
 def step(app):
     app.steps += 1
-    if app.steps % 30 == 0:
+    if app.steps % 10 == 0:
         app.crowdSound = Sound(getCrowdNoise(app.crowd))
 
 def updateStats(app):
@@ -228,10 +272,11 @@ def simulateShotMade(app):
     app.totalShots += 1
     app.shotHistory.append((app.totalShots, True, time.time()))
     updateShotPercentage(app)
-    
+    updateStreak(app, True)
+    visualEffects.update_fissure(app, time.time())
+    app.crowdSound = Sound(getCrowdNoise(app.crowd))
     triggerEffects(app)
     updateStats(app)
-    visualEffects.update_fissure(app, time.time())
     step(app)
 
 def simulateShotMissed(app):
@@ -239,7 +284,7 @@ def simulateShotMissed(app):
     app.shotHistory.append((app.totalShots, False, time.time()))
     app.currentStreak = 0
     updateShotPercentage(app)
-    updateStreak(app, True)
+    updateStreak(app, False)
     updateStats(app)
     visualEffects.update_fissure(app, time.time())
     step(app)
@@ -276,7 +321,7 @@ def start_redrawAll(app):
     left, top = (app.width - 350) // 2, (app.height - 350) // 2
 
     drawImage("images/logo.png", left, top)
-    drawLabel(app.message, centerX, centerY + 75, size=25, font='app.geo', fill='white', bold=True)
+    drawLabel(app.message, centerX, centerY + 75, size=20, fill='white', bold=True)
 
 #|************************| TIP SCREEN |************************|#
 
@@ -335,9 +380,12 @@ def getFrames(app):
         
 
 def tip_redrawAll(app):
-    centerX, y = app.width // 2, (app.height // 2) + 100
+    centerX, y = app.width // 2, (app.height // 2) + 115
     drawAssets(app)
-    drawLabel("TIP", 10, 10, size=15, fill='white', bold=True)
+    drawLabel("TIP", centerX, 65, size=15, fill='white', bold=True)
+    drawImage("images/tip.png", centerX - 125, 75, width=250, height=250)
+    drawLabel("For best detection results ensure the camera is at an angle", centerX, y - 50, size=12, bold=True, align='center', fill='white')
+    drawLabel("between 30 - 45 degrees to the basket", centerX, y - 35, size=12, bold=True, align='center', fill='white')
     drawContinueButton(app, centerX, y)
     
 
@@ -348,8 +396,8 @@ def drawContinueButton(app, x, y):
             continueButton['bottom'] - continueButton['top'], 
             fill="white",
             opacity=continueButton['opacity'])
-    drawLabel(app.message, x, y, size=10, 
-             fill=app.background, bold=True, align="center")
+    
+    drawLabel(app.message, x, y, size=10, fill=app.background, bold=True, align="center")
 
 #|************************| LIVEVIEW SCREEN |************************|#
 
@@ -379,37 +427,52 @@ def liveView_redrawAll(app):
     drawCameraFeed(app)
     drawShotStats(app)
 
+def drawCurrentStreak(app):
+   x = app.camFeedOutlineLeft + 378
+   y = app.height - 77
+   
+   if app.currentStreak < 3:
+       drawImage("images/nostreak.png", x, y, width=64, height=64, opacity=100)
+   else:
+       hotstreak_files = list(pathlib.Path('images/hotstreak').glob('*.png'))
+       hotstreak_path = random.choice(hotstreak_files)
+       drawImage(str(hotstreak_path), x+2, y - 5, width=60, height=60, opacity=100)
+
+def drawBestStreak(app):
+    drawImage("images/beststreak.png", app.camFeedOutlineLeft + 485, app.height - 75, width=60, height=60, opacity=100)
+
 # Draw shot stats and streak counters at the bottom of the screen
 def drawShotStats(app):
     # Draw basic shot stats
-    statsY = app.height - 40
+    statsY = app.height - 45
     drawLabel(f"{app.madeShots}", 
-             app.camFeedOutlineLeft + 20, statsY, 
-             size=30, bold=True, align="center", fill='white')
+             app.camFeedOutlineLeft + 20, statsY + 2, 
+             size=35, bold=True, align="center", fill='white')
     
-    drawLabel("MADE", app.camFeedOutlineLeft + 20, statsY + 25, size=8, bold=True, fill='white')
+    drawLabel("MADE", app.camFeedOutlineLeft + 20, statsY + 30, size=8, bold=True, fill='white')
     
     drawLabel(f"{app.totalShots}", 
-             app.camFeedOutlineLeft + 110, statsY, 
-             size=30, bold=True, align="center", fill='white')
-    drawLabel("ATTEMPTS", app.camFeedOutlineLeft + 110, statsY + 25, size=8, bold=True, fill='white')
+             app.camFeedOutlineLeft + 110, statsY + 2, 
+             size=35, bold=True, align="center", fill='white')
+    drawLabel("ATTEMPTS", app.camFeedOutlineLeft + 110, statsY + 30, size=8, bold=True, fill='white')
 
     drawLabel(f"{app.shotPercentage:.1f}%", 
-             app.camFeedOutlineLeft + 210, statsY, 
-             size=30, bold=True, align="center", fill='white')
-    drawLabel("FG PERCENTAGE", app.camFeedOutlineLeft + 210, statsY + 25, size=8, bold=True, fill='white')
+             app.camFeedOutlineLeft + 210, statsY + 2, 
+             size=35, bold=True, align="center", fill='white')
+    drawLabel("FG PERCENTAGE", app.camFeedOutlineLeft + 210, statsY + 30, size=8, bold=True, fill='white')
     
-    # Draw streak information
-    streakY = statsY - 25
-    streakColor = 'orange' if app.currentStreak >= 3 else 'white'  # Highlight hot streaks
+    currentStreakText = 'orangeRed' if app.currentStreak >= 3 else 'black'
+    drawCurrentStreak(app)
+    drawLabel(f"{app.currentStreak}", 
+             app.camFeedOutlineLeft + 410, statsY, 
+             size=30, bold=True, align="center", fill=currentStreakText)
+    drawLabel("CURRENT STREAK", app.camFeedOutlineLeft + 410, statsY + 30, size=8, bold=True, fill='white')
     
-    drawLabel(f"Current Streak: {app.currentStreak}", 
-             app.width//4, streakY, 
-             size=12, bold=True, align="center", fill=streakColor)
-    
-    drawLabel(f"Best Streak: {app.bestStreak}", 
-             3*app.width//4, streakY, 
-             size=12, bold=True, align="center", fill='white')
+    drawBestStreak(app)
+    drawLabel(f"{app.bestStreak}", 
+             app.camFeedOutlineLeft + 515, statsY, 
+             size=30, bold=True, align="center", fill='darkslateblue')
+    drawLabel("BEST STREAK", app.camFeedOutlineLeft + 515, statsY + 30, size=8, bold=True, fill='white')
 
 # Draw camera feed with status indicators
 def drawCameraFeed(app):
@@ -439,7 +502,7 @@ def drawCameraFeed(app):
         drawRect(app.camFeedLeft, app.camFeedTop, app.camFeedWidth, app.camFeedHeight, fill=app.background)
         drawLabel(app.message, centerX, centerY, size=12, bold=True, fill='white')
     
-#|************************| STATISTICS SCREEN |************************|#
+#|************************| STATS SCREEN |************************|#
 
 def stats_onScreenActivate(app):
     app.currentTab = 'stats'
@@ -468,7 +531,7 @@ def stats_onMouseMove(app, x, y):
         pointY = app.graphTop + app.graphHeight - (point[1]/100 * app.graphHeight)
         
         # Check if mouse is within 10 pixels of point
-        if ((x - pointX)**2 + (y - pointY)**2) <= 100:
+        if ((x - pointX)**2 + (y - pointY)**2) <= 100:  # Using 100 as threshold (10^2)
             app.hoveredPoint = i
             break
 
@@ -498,8 +561,8 @@ def drawInfoBox(app, x, y, pointIndex, percentage, made, total):
     boxHeight = 75
     padding = 10
     
-    boxLeft = min(x + padding, app.graphLeft + app.graphWidth - boxWidth)
-    boxTop = min(y - boxHeight - padding, app.graphTop + app.graphHeight - boxHeight)
+    boxLeft = min(x - boxWidth/2, app.graphLeft + app.graphWidth - boxWidth - padding)
+    boxTop = min(y - boxHeight - padding, app.graphTop + app.graphHeight - boxHeight + padding)
     if boxTop < app.graphTop:
         boxTop = y + padding
 
@@ -581,6 +644,9 @@ def drawGraph(app):
         x1 = app.graphLeft + (app.graphPoints[0][0] / timeWindow) * app.graphWidth
         y1 = app.graphTop + app.graphHeight - (app.graphPoints[0][1]/100 * app.graphHeight)
         drawLine(x0, y1, x1, y1, fill='lightBlue', lineWidth=2)
+        drawPoint(app, x1, y1, app.hoveredPoint == 0)
+
+        fx, fy, fi = 0, 0, 0
         
         for i in range(len(app.graphPoints)-1):
             x1 = app.graphLeft + (app.graphPoints[i][0] / timeWindow) * app.graphWidth
@@ -592,9 +658,7 @@ def drawGraph(app):
             drawPoint(app, x1, y1, app.hoveredPoint == i)
             
             if app.hoveredPoint == i:
-                madeShots = int((app.graphPoints[i][1] / 100) * app.graphPoints[i][2])
-                drawInfoBox(app, x1, y1, i+1, app.graphPoints[i][1], 
-                          madeShots, app.graphPoints[i][2])
+                fx, fy, fi = x1, y1, i
         
         lastX = app.graphLeft + (app.graphPoints[-1][0] / timeWindow) * app.graphWidth
         lastY = app.graphTop + app.graphHeight - (app.graphPoints[-1][1]/100 * app.graphHeight)
@@ -607,6 +671,10 @@ def drawGraph(app):
         if app.hoveredPoint is None:
             drawInfoBox(app, lastX, lastY, len(app.graphPoints), 
                        app.shotPercentage, app.madeShots, app.totalShots)
+        elif app.hoveredPoint is not None and not isLastPointHovered:
+            madeShots = int((app.graphPoints[fi][1] / 100) * app.graphPoints[fi][2])
+            drawInfoBox(app, fx, fy, fi+1, app.graphPoints[fi][1], 
+                          madeShots, app.graphPoints[fi][2])
         elif isLastPointHovered:
             drawInfoBox(app, lastX, lastY, len(app.graphPoints),
                        app.shotPercentage, app.madeShots, app.totalShots)
@@ -626,12 +694,7 @@ def drawShotHistory(app):
              app.historyTop,
              bold=True,
              fill='white', size=40)
-
-    drawLabel(f"SHOT HISTORY",
-             app.historyLeft + app.historyWidth/2,
-             app.historyTop + 45,
-             bold=True,
-             fill='white', size=10)
+    
     shotHeight = 18
     shotWidth = app.historyWidth - 40
     startY = app.historyTop + 54
@@ -653,7 +716,14 @@ def drawShotHistory(app):
                  fill='white', size=10, bold=True, align='center')
         drawLabel(f"{shotTime}", app.historyLeft + 25, y + shotHeight/2,
                   fill='white', size=10, align='left', bold=True)
-    drawLine(app.historyLeft + 20, startY, app.historyLeft + 20 + shotWidth, startY, fill='white')
+    
+    drawRect(app.historyLeft + 20, startY - 20, shotWidth, app.camFeedOutlineHeight - 55 - startY, fill='white')
+    drawLabel(f"SHOT HISTORY",
+             app.historyLeft + app.historyWidth/2,
+             app.historyTop + 45,
+             bold=True,
+             fill=app.background, size=12)
+    
     drawRect(app.historyLeft + 20, startY - 20, shotWidth, app.camFeedOutlineHeight - 64, fill=None, border='white')
     
 def stats_redrawAll(app):
@@ -669,20 +739,53 @@ def stats_redrawAll(app):
 def sounds_onScreenActivate(app):
     app.currentTab = 'sounds'
 
+def drawSoundButtons(app):
+    for name, coords in app.soundButtons.items():
+        textFill = 'white'
+        outline = 'white' if name == app.crowd else 'gray'
+        drawRect(coords['left'], coords['top'], 
+                coords['right'] - coords['left'], 
+                coords['bottom'] - coords['top'], 
+                fill=app.background, border=outline, borderWidth=5, opacity=coords["opacity"])
+        drawLabel(name.upper(), 
+                (coords['left'] + coords['right'])/2,
+                (coords['top'] + coords['bottom'])/2,
+                size=12, bold=True, 
+                fill=textFill)
+        
+def soundButtonHover(app, x, y):
+    for name, coord, in app.soundButtons.items():
+        if (coord['left'] <= x <= coord['right'] and 
+            coord['top'] <= y <= coord['bottom']) and name != app.crowd:
+            coord['opacity'] = 100
+        elif name == app.crowd:
+            coord['opacity'] = 100
+        else:
+            coord['opacity'] = 60
+
+def soundButtonPress(app, x, y):
+    for name, coord in app.soundButtons.items():
+        if (coord['left'] <= x <= coord['right'] and 
+            coord['top'] <= y <= coord['bottom']):
+            app.crowd = name
+            app.crowdSound = Sound(getCrowdNoise(app.crowd))
+
 def sounds_onStep(app):
     takeStep(app)
 
 def sounds_onMouseMove(app, x, y):
     tabHover(app, x, y)
+    soundButtonHover(app, x, y)
 
 def sounds_onMousePress(app, x, y):
     tabPress(app, x, y)
+    soundButtonPress(app, x, y)
 
 def sounds_redrawAll(app):
-    centerX, centerY = app.width // 2, app.height // 2
     drawAssets(app)
     drawTabButtons(app)
-    drawLabel("Sounds Screen", centerX, centerY, fill="white")
+    
+    drawSoundButtons(app)
 
 def main():
     runAppWithScreens(initialScreen='start')
