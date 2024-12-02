@@ -69,6 +69,12 @@ def onAppStart(app):
     app.graphWidth = app.camFeedOutlineWidth - 225
     app.graphHeight = app.camFeedOutlineHeight
     app.hoveredPoint = None
+
+    # Session variables
+    app.isRunning = False
+    app.sessionEndTime = None
+    app.sessionHoveredPoint = None
+    
     
     # Shot history panel dimensions
     app.historyLeft = app.camFeedOutlineLeft + (app.camFeedOutlineWidth - 200) + 20
@@ -195,7 +201,7 @@ def tabPress(app, x, y):
     for name, coords in app.buttons.items():
         if name == "continue":
             continue
-        if (coords['left'] <= x <= coords['right'] and 
+        elif (coords['left'] <= x <= coords['right'] and 
             coords['top'] <= y <= coords['bottom']):
             if name != app.currentTab:
                 app.currentTab = name
@@ -211,6 +217,14 @@ def tabHover(app, x, y):
                 coords["opacity"] = 80
         else:
             coords["opacity"] = 100
+            
+def keypress(app, key):
+    if key == 'm': 
+            simulateShotMade(app)
+    elif key == 's':
+        simulateShotMissed(app)
+    elif key == 'f':
+        setActiveScreen('session')
 
 def takeStep(app):
     if not app.frameQueue.empty():
@@ -348,11 +362,11 @@ def tip_onMouseMove(app, x, y):
 
 # Starts MVC safe threading for live feed capture
 def startCaptureThread(app):
+    app.isRunning = True  # Initialize the running flag
     capture_thread = threading.Thread(target=getFrames, args=(app,))
     capture_thread.daemon = True 
     capture_thread.start()
 
-# Frame by frame live feed capture with object detection
 def getFrames(app):
     video = 'tests/test1.mp4'
     cam = cv2.VideoCapture(video) 
@@ -362,12 +376,11 @@ def getFrames(app):
         return
 
     fps = cam.get(cv2.CAP_PROP_FPS)
-    # Initialize EKF for ball tracking
-    ekf = ExtendedKalmanFilter(dt=fps,  # Assuming 30 FPS
+    ekf = ExtendedKalmanFilter(dt=fps,
                             process_noise_std=1.0,
                             measurement_noise_std=10.0)
 
-    while True:
+    while app.isRunning:
         ret, frame = cam.read()
         if not ret:
             break
@@ -386,6 +399,7 @@ def tip_redrawAll(app):
     drawImage("images/tip.png", centerX - 125, 75, width=250, height=250)
     drawLabel("For best detection results ensure the camera is at an angle", centerX, y - 50, size=12, bold=True, align='center', fill='white')
     drawLabel("between 30 - 45 degrees to the basket", centerX, y - 35, size=12, bold=True, align='center', fill='white')
+    drawLabel("*** When Done Press F to End Session ***", centerX, y + 35, size=12, bold=True, align='center', fill='white')
     drawContinueButton(app, centerX, y)
     
 
@@ -406,10 +420,7 @@ def liveView_onScreenActivate(app):
     app.message = 'NO CAMERA INPUT'
 
 def liveView_onKeyPress(app, key):
-    if key == 'm': 
-        simulateShotMade(app)
-    elif key == 's':
-        simulateShotMissed(app)
+    keypress(app,key)
 
 def liveView_onMousePress(app, x, y):
     tabPress(app, x, y)
@@ -511,10 +522,7 @@ def stats_onStep(app):
     takeStep(app)
 
 def stats_onKeyPress(app, key):
-    if key == 'm': 
-        simulateShotMade(app)
-    elif key == 's':
-        simulateShotMissed(app)
+    keypress(app,key)
 
 def stats_onMousePress(app, x, y):
     tabPress(app, x, y)
@@ -770,6 +778,9 @@ def soundButtonPress(app, x, y):
             app.crowd = name
             app.crowdSound = Sound(getCrowdNoise(app.crowd))
 
+def sound_onKeyPress(app, key):
+    keypress(app,key)
+
 def sounds_onStep(app):
     takeStep(app)
 
@@ -786,6 +797,205 @@ def sounds_redrawAll(app):
     drawTabButtons(app)
     
     drawSoundButtons(app)
+
+#|************************| END SESSION SCREEN |************************|#
+def session_onScreenActivate(app):
+    app.currentTab = 'session'
+    app.message = "SESSION SUMMARY"
+    
+    # Stop active elements
+    app.isRunning = False  # Stop the capture thread
+    app.frameQueue = queue.Queue()  # Clear the frame queue
+    app.frameImage = None  # Clear the current frame
+    app.crowdSound = None  # Clear sound
+    
+    # Calculate final session time
+    app.sessionEndTime = time.time()
+    
+    # Calculate hot and cold periods once
+    app.hotPeriod, app.coldPeriod = findHotColdPeriods(app)
+    
+    # Initialize hover state for graph
+    app.sessionHoveredPoint = None
+
+def session_onMouseMove(app, x, y):
+    # Graph dimensions (matching drawShootingTrendsGraph)
+    graphLeft = 50
+    graphTop = 180
+    graphWidth = app.width - 100
+    graphHeight = 150
+    
+    # Check if mouse is within graph bounds
+    if (graphLeft <= x <= graphLeft + graphWidth and 
+        graphTop <= y <= graphTop + graphHeight):
+        
+        # Find nearest point
+        app.sessionHoveredPoint = None
+        if len(app.graphPoints) > 0:
+            for i, point in enumerate(app.graphPoints):
+                pointX = graphLeft + (point[0] / app.graphPoints[-1][0]) * graphWidth
+                pointY = graphTop + graphHeight - (point[1] / 100) * graphHeight
+                
+                if ((x - pointX)**2 + (y - pointY)**2) <= 100:  # 10px radius
+                    app.sessionHoveredPoint = i
+                    break
+    else:
+        app.sessionHoveredPoint = None
+
+def findHotColdPeriods(app):
+    if len(app.shotHistory) < 5:  # Minimum window size
+        return None, None
+    
+    windowSize = 5
+    windows = []
+    
+    for i in range(len(app.shotHistory) - windowSize + 1):
+        window = app.shotHistory[i:i+windowSize]
+        made = sum(1 for _, made, _ in window if made)
+        percentage = (made / windowSize) * 100
+        startTime = window[0][2]
+        endTime = window[-1][2]
+        windows.append((startTime, endTime, percentage, i))
+    
+    if not windows:
+        return None, None
+    
+    # Find hot and cold periods
+    hotPeriod = max(windows, key=lambda x: x[2])
+    coldPeriod = min(windows, key=lambda x: x[2])
+    
+    return hotPeriod, coldPeriod
+
+def drawOverallStats(app, centerX):
+    # Calculate advanced stats
+    sessionDuration = (app.sessionEndTime - app.sessionStartTime) / 60  # in minutes
+    shotsPerMinute = app.totalShots / sessionDuration if sessionDuration > 0 else 0
+    
+    statsY = 90
+    
+    # Draw session duration
+    mins = int(sessionDuration)
+    secs = int((sessionDuration - mins) * 60)
+    timeStr = f"{mins:02d}:{secs:02d}"
+    drawLabel(f"SESSION DURATION", centerX - 200, statsY, 
+             size=12, bold=True, fill='white')
+    drawLabel(timeStr, centerX - 200, statsY + 25, 
+             size=24, bold=True, fill='white')
+    
+    # Draw shooting percentage
+    drawLabel("SHOOTING %", centerX, statsY,
+             size=12, bold=True, fill='white')
+    drawLabel(f"{app.shotPercentage:.1f}%", centerX, statsY + 25,
+             size=24, bold=True, fill='white')
+    
+    # Draw shots per minute
+    drawLabel("SHOTS/MIN", centerX + 200, statsY,
+             size=12, bold=True, fill='white')
+    drawLabel(f"{shotsPerMinute:.1f}", centerX + 200, statsY + 25,
+             size=24, bold=True, fill='white')
+
+def drawShootingTrendsGraph(app):
+    # Graph dimensions and position
+    graphLeft = 50
+    graphTop = 180
+    graphWidth = app.width - 100
+    graphHeight = 150
+    
+    # Draw graph background
+    drawRect(graphLeft, graphTop, graphWidth, graphHeight, 
+             fill=None, border='white')
+    
+    # Draw time axis labels
+    if len(app.graphPoints) > 0:
+        totalTime = app.graphPoints[-1][0]
+        for i in range(6):  # 5 time markers
+            timeVal = totalTime * i / 5
+            x = graphLeft + (timeVal / totalTime) * graphWidth
+            timeLabel = formatTimeLabel(timeVal)
+            drawLabel(timeLabel, x, graphTop + graphHeight + 20,
+                     fill='white', bold=True, size=10)
+    
+    # Draw percentage axis labels
+    for i in range(0, 101, 20):
+        y = graphTop + graphHeight - (i/100 * graphHeight)
+        drawLabel(f"{i}%", graphLeft - 10, y,
+                 fill='white', bold=True, size=10, align='right')
+        
+    # Draw hot/cold period highlights if they exist
+    if app.hotPeriod and app.coldPeriod:
+        # Hot period highlight
+        hotStart = graphLeft + (app.hotPeriod[0] - app.sessionStartTime) / (app.graphPoints[-1][0] * 60) * graphWidth
+        hotEnd = graphLeft + (app.hotPeriod[1] - app.sessionStartTime) / (app.graphPoints[-1][0] * 60) * graphWidth
+        drawRect(hotStart, graphTop, hotEnd - hotStart, graphHeight,
+                fill='orange', opacity=20)
+        
+        # Cold period highlight
+        coldStart = graphLeft + (app.coldPeriod[0] - app.sessionStartTime) / (app.graphPoints[-1][0] * 60) * graphWidth
+        coldEnd = graphLeft + (app.coldPeriod[1] - app.sessionStartTime) / (app.graphPoints[-1][0] * 60) * graphWidth
+        drawRect(coldStart, graphTop, coldEnd - coldStart, graphHeight,
+                fill='blue', opacity=20)
+    
+    # Draw trend line
+    if len(app.graphPoints) > 1:
+        prevX = None
+        prevY = None
+        
+        for i, point in enumerate(app.graphPoints):
+            x = graphLeft + (point[0] / app.graphPoints[-1][0]) * graphWidth
+            y = graphTop + graphHeight - (point[1] / 100) * graphHeight
+            
+            if prevX is not None:
+                drawLine(prevX, prevY, x, y, fill='lightBlue', lineWidth=2)
+            
+            # Draw point with hover effect
+            isHovered = (app.sessionHoveredPoint == i)
+            pointRadius = 5 if isHovered else 3
+            drawCircle(x, y, pointRadius, fill='white')
+            
+            # Draw info box if point is hovered
+            if isHovered:
+                drawInfoBox(app, x, y, i+1, point[1], 
+                          int(point[1] * point[2] / 100), int(point[2]))
+            
+            prevX = x
+            prevY = y
+
+def drawHotColdPeriods(app):
+    if app.hotPeriod and app.coldPeriod:
+        # Draw hot period stats
+        hotY = 380
+        hotLeft = 50
+        drawRect(hotLeft, hotY, 250, 60, fill=None, border='orange')
+        drawLabel("HOTTEST PERIOD", hotLeft + 125, hotY + 15, 
+                 size=14, bold=True, fill='orange')
+        timeStart = formatTimeHeader((app.hotPeriod[0] - app.sessionStartTime) / 60)
+        timeEnd = formatTimeHeader((app.hotPeriod[1] - app.sessionStartTime) / 60)
+        drawLabel(f"{timeStart} - {timeEnd} ({app.hotPeriod[2]:.1f}%)", 
+                 hotLeft + 125, hotY + 40, size=12, fill='white')
+        
+        # Draw cold period stats
+        coldLeft = app.width - 300
+        drawRect(coldLeft, hotY, 250, 60, fill=None, border='lightBlue')
+        drawLabel("COLDEST PERIOD", coldLeft + 125, hotY + 15,
+                 size=14, bold=True, fill='lightBlue')
+        timeStart = formatTimeHeader((app.coldPeriod[0] - app.sessionStartTime) / 60)
+        timeEnd = formatTimeHeader((app.coldPeriod[1] - app.sessionStartTime) / 60)
+        drawLabel(f"{timeStart} - {timeEnd} ({app.coldPeriod[2]:.1f}%)",
+                 coldLeft + 125, hotY + 40, size=12, fill='white')
+
+def session_redrawAll(app):
+    # Draw header
+    centerX = app.width // 2
+    drawLabel(app.message, centerX, 30, size=24, bold=True, fill='white')
+    
+    # Draw overall stats section
+    drawOverallStats(app, centerX)
+    
+    # Draw shooting trends graph
+    drawShootingTrendsGraph(app)
+    
+    # Draw hot/cold periods
+    drawHotColdPeriods(app)
 
 def main():
     runAppWithScreens(initialScreen='start')
