@@ -3,22 +3,38 @@
 from ultralytics import YOLO
 import cv2
 import numpy as np
+from c import v
 from ekf import ExtendedKalmanFilter
 
 # Initialize YOLO model
 model = YOLO('v11.pt')
 detClasses = {0: 'Ball', 1: 'Made Shot', 2: 'Person', 3: 'Rim', 4: 'Shot'}
 
-# Initialize EKF for ball tracking
-ekf = ExtendedKalmanFilter(dt=1.0/30,  # Assuming 30 FPS
-                           process_noise_std=1.0,
-                           measurement_noise_std=10.0)
+def detectObjects(frame, outputWidth, outputHeight, ekf):
+    # Image output resizing
+    h, w = frame.shape[:2]
 
-def detectObjects(frame, outputWidth, outputHeight):
-    results = model(frame, conf=0.4, batch=10, device='mps')
+    aspectRatioOutput = outputWidth / outputHeight
+    aspectRatioFrame = w / h
+
+    if aspectRatioFrame > aspectRatioOutput:
+        newWidth = int(h * aspectRatioOutput)
+        newHeight = h
+    else:
+        newWidth = w
+        newHeight = int(w / aspectRatioOutput)
+
+    xStart = (w - newWidth) // 2
+    yStart = (h - newHeight) // 2
+    croppedFrame = frame[yStart:yStart + newHeight, xStart:xStart + newWidth]
+
+    outputFrame = cv2.resize(croppedFrame, (outputWidth, outputHeight), interpolation=cv2.INTER_AREA)
+
+    results = model(outputFrame, conf=0.6, batch=10, device='mps')
     ballDetected = False
     rimDetected = False
     shotMadeDetected = False
+    p = 0
 
     # Variables to store ball measurements
     ball_measurements = []
@@ -39,7 +55,7 @@ def detectObjects(frame, outputWidth, outputHeight):
                 center_x = int((x1 + x2) / 2)
                 center_y = int((y1 + y2) / 2)
                 radius = int(abs(x2 - x1) / 2)
-                cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), 2)
+                p = v(outputFrame, (center_x, center_y), radius)
                 ball_measurements.append(np.array([center_x, center_y]))
             elif cls == 3:  # Rim
                 rimDetected = True
@@ -49,9 +65,9 @@ def detectObjects(frame, outputWidth, outputHeight):
                 color = (255, 250, 205)
 
             if color:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, detClasses[cls].upper(), (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 2)
+                cv2.rectangle(outputFrame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(outputFrame, detClasses[cls].upper(), (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 2)
 
     # Prediction Step
     ekf.predict()
@@ -66,26 +82,8 @@ def detectObjects(frame, outputWidth, outputHeight):
 
     # Get current state estimate
     state = ekf.get_state()
-    est_x, est_y, est_vx, est_vy = state
+    est_x, est_y, __, ___ = state
 
-    cv2.circle(frame, (int(est_x), int(est_y)), 0, (255, 255, 255), 0)
-    # Image output resizing
-    h, w = frame.shape[:2]
-
-    aspectRatioOutput = outputWidth / outputHeight
-    aspectRatioFrame = w / h
-
-    if aspectRatioFrame > aspectRatioOutput:
-        newWidth = int(h * aspectRatioOutput)
-        newHeight = h
-    else:
-        newWidth = w
-        newHeight = int(w / aspectRatioOutput)
-
-    xStart = (w - newWidth) // 2
-    yStart = (h - newHeight) // 2
-    croppedFrame = frame[yStart:yStart + newHeight, xStart:xStart + newWidth]
-
-    outputFrame = cv2.resize(croppedFrame, (outputWidth, outputHeight), interpolation=cv2.INTER_AREA)
+    cv2.circle(frame, (int(est_x), int(est_y)), p, (255, 255, 255), p)
 
     return ballDetected, rimDetected, shotMadeDetected, outputFrame

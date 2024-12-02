@@ -21,6 +21,7 @@ class LightningStrike:
     
     def generate_strike_pattern(self):
         self.branches = []
+        
         def recursive_branch(x, y, angle, length, depth, is_main_bolt=False):
             if depth <= 0 or length < 2:
                 return

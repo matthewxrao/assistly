@@ -1,12 +1,12 @@
 from cmu_graphics import *
 from loadAudios import getCrowdNoise
 from objectDetection import detectObjects
+from ekf import ExtendedKalmanFilter
 import cv2
 import threading
 import time
 import queue 
 import visualEffects
-from pyfonts import *
 
 #|************************| INITIALIZE APP |************************|#
 
@@ -27,7 +27,7 @@ def onAppStart(app):
     app.camFeedWidth = app.camFeedOutlineWidth - 2 * app.camFeedGap
     app.camFeedHeight = app.camFeedOutlineHeight - 2 * app.camFeedGap
     
-    # Initialize shot tracking statistics and streaks
+    # Initialize shot tracking stats and streaks
     app.totalShots = 0
     app.madeShots = 0
     app.shotPercentage = 0
@@ -48,11 +48,31 @@ def onAppStart(app):
     app.frameQueue = queue.Queue()
     app.ballDetectionPersistenceThreshold = 40
     app.rimDetectionPersistenceThreshold = 20
-    app.shotMadePersistenceThreshold = 15  # Increased threshold
+    app.shotMadePersistenceThreshold = 20
 
     app.ballDetectionCounter = app.ballDetectionPersistenceThreshold  
     app.rimDetectionCounter = app.rimDetectionPersistenceThreshold
     app.shotMadeDetectionCounter = app.shotMadePersistenceThreshold
+
+    # Stats Variables
+    app.sessionStartTime = 0
+    app.shotHistory = []  
+    app.graphPoints = []  
+    app.graphMargin = 40 
+    app.minGraphMinutes = 0.083
+
+    # Graph dimensions
+    app.graphLeft = app.camFeedOutlineLeft + 50
+    app.graphTop = app.camFeedOutlineTop
+    app.graphWidth = app.camFeedOutlineWidth - 225
+    app.graphHeight = app.camFeedOutlineHeight
+    app.hoveredPoint = None
+    
+    # Shot history panel dimensions
+    app.historyLeft = app.camFeedOutlineLeft + (app.camFeedOutlineWidth - 200) + 20
+    app.historyTop = app.camFeedOutlineTop + 30
+    app.historyWidth = 200
+    app.historyHeight = 150
 
     # Initialize buttons dictionary with screen-specific button coordinates
     spacing = 10
@@ -74,7 +94,7 @@ def onAppStart(app):
             'bottom': 80,
             'opacity': 100
         },
-        'statistics': {
+        'stats': {
             'left': startX + buttonWidth + spacing,
             'top': 50,
             'right': startX + 2*buttonWidth + spacing,
@@ -93,21 +113,32 @@ def onAppStart(app):
     app.currentTab = 'liveView'
     visualEffects.init_fissure(app)
 
+# Converts frame to image URL displayable through CMU Graphics
+def convert_frame_to_url(frame):
+    temp_path = "tempFrame.jpg"
+    cv2.imwrite(temp_path, frame)
+    return temp_path
+
 #|************************| APP FUNCTIONS |************************|#
 def drawTabButtons(app):
     for name, coords in app.buttons.items():
         if name == "continue":
             continue
-        buttonFill = 'gray' if name == app.currentTab else 'white'
+        elif name == "liveView":
+            text = "live feed"
+        else:
+            text = name.title()
+
+        buttonFill = app.background if name == app.currentTab else 'white'
         textFill = 'white' if name == app.currentTab else app.background
         drawRect(coords['left'], coords['top'], 
                 coords['right'] - coords['left'], 
                 coords['bottom'] - coords['top'], 
-                fill=buttonFill, border='gray')
-        drawLabel(name.title(), 
+                fill=buttonFill, border='white', opacity=coords["opacity"])
+        drawLabel(text.upper(), 
                 (coords['left'] + coords['right'])/2,
                 (coords['top'] + coords['bottom'])/2,
-                size=12, font='montserrat', 
+                size=12, bold=True, 
                 fill=textFill)
         
 def drawAssets(app):
@@ -126,6 +157,17 @@ def tabPress(app, x, y):
                 app.currentTab = name
                 setActiveScreen(name)
 
+def tabHover(app, x, y):
+    for name, coords in app.buttons.items():
+        if name == "continue":
+            continue
+        if (coords['left'] <= x <= coords['right'] and 
+            coords['top'] <= y <= coords['bottom']):
+            if name != app.currentTab:
+                coords["opacity"] = 80
+        else:
+            coords["opacity"] = 100
+
 def takeStep(app):
     if not app.frameQueue.empty():
         ballDetected, rimDetected, shotMadeDetected, frame_with_detections = app.frameQueue.get()
@@ -143,6 +185,7 @@ def takeStep(app):
                 app.shotMadeDetectionCounter = 0
                 app.madeShots += 1
                 app.totalShots += 1
+                app.shotHistory.append((app.totalShots, True, time.time()))
                 updateShotPercentage(app)
                 updateStreak(app, True)
                 triggerEffects(app)
@@ -153,7 +196,8 @@ def takeStep(app):
         app.rimStatus = app.rimDetectionCounter < app.rimDetectionPersistenceThreshold
         app.shotMade = app.shotMadeDetectionCounter < app.shotMadePersistenceThreshold
 
-        app.frameImage = convert_frame_to_url(frame_with_detections)   
+        app.frameImage = convert_frame_to_url(frame_with_detections)
+        updateStats(app)
         step(app)
         visualEffects.update_fissure(app, time.time())
 
@@ -161,6 +205,67 @@ def step(app):
     app.steps += 1
     if app.steps % 30 == 0:
         app.crowdSound = Sound(getCrowdNoise(app.crowd))
+
+def updateStats(app):
+    currentTime = time.time()
+    elapsedMinutes = (currentTime - app.sessionStartTime) / 60
+    
+    if app.totalShots > 0:
+        percentage = (app.madeShots / app.totalShots) * 100
+        if len(app.graphPoints) == 0:
+            # First shot
+            app.graphPoints.append((elapsedMinutes, percentage, app.totalShots))
+        elif app.totalShots > app.graphPoints[-1][2]:
+            # New shot - add the point
+            app.graphPoints.append((elapsedMinutes, percentage, app.totalShots))
+        else:
+            lastPoint = app.graphPoints[-1]
+            app.graphPoints[-1] = (elapsedMinutes, lastPoint[1], lastPoint[2])
+
+def simulateShotMade(app):
+    app.shotMade = True
+    app.madeShots += 1
+    app.totalShots += 1
+    app.shotHistory.append((app.totalShots, True, time.time()))
+    updateShotPercentage(app)
+    
+    triggerEffects(app)
+    updateStats(app)
+    visualEffects.update_fissure(app, time.time())
+    step(app)
+
+def simulateShotMissed(app):
+    app.totalShots += 1
+    app.shotHistory.append((app.totalShots, False, time.time()))
+    app.currentStreak = 0
+    updateShotPercentage(app)
+    updateStreak(app, True)
+    updateStats(app)
+    visualEffects.update_fissure(app, time.time())
+    step(app)
+
+def triggerEffects(app):
+    current_time = time.time()
+    visualEffects.trigger_fissure(app, current_time)
+    app.crowdSound.play(restart=False, loop=False)
+
+# Update shooting percentage based on makes/total
+def updateShotPercentage(app):
+    if app.totalShots > 0:
+        app.shotPercentage = (app.madeShots / app.totalShots) * 100
+    else:
+        app.shotPercentage = 0
+
+# Update consecutive makes streak
+def updateStreak(app, made):
+    if made:
+        app.currentStreak += 1
+        if app.currentStreak > app.bestStreak:
+            app.bestStreak = app.currentStreak
+    else:
+        app.currentStreak = 0
+
+
 #|************************| START SCREEN |************************|#
 
 def start_onMousePress(app, x, y):
@@ -183,6 +288,7 @@ def tip_onMousePress(app, x, y):
     continueButton = app.buttons['continue']
     if (continueButton['left'] <= x <= continueButton['right'] and 
         continueButton['top'] <= y <= continueButton['bottom']):
+        app.sessionStartTime = time.time()
         startCaptureThread(app)
         setActiveScreen('liveView')
 
@@ -210,14 +316,19 @@ def getFrames(app):
         print("Error: Could not open video.")
         return
 
+    fps = cam.get(cv2.CAP_PROP_FPS)
+    # Initialize EKF for ball tracking
+    ekf = ExtendedKalmanFilter(dt=fps,  # Assuming 30 FPS
+                            process_noise_std=1.0,
+                            measurement_noise_std=10.0)
+
     while True:
         ret, frame = cam.read()
         if not ret:
             break
         
         frameX, frameY = app.camFeedWidth, app.camFeedHeight
-
-        ballDetected, rimDetected, shotMadeDetected, frame_with_detections = detectObjects(frame, frameX, frameY)
+        ballDetected, rimDetected, shotMadeDetected, frame_with_detections = detectObjects(frame, frameX, frameY, ekf)
         app.frameQueue.put((ballDetected, rimDetected, shotMadeDetected, frame_with_detections))
         
     cam.release()
@@ -226,7 +337,7 @@ def getFrames(app):
 def tip_redrawAll(app):
     centerX, y = app.width // 2, (app.height // 2) + 100
     drawAssets(app)
-    drawLabel("TIP", 10, 10, size=15, font='app.geo', fill='white', bold=True)
+    drawLabel("TIP", 10, 10, size=15, fill='white', bold=True)
     drawContinueButton(app, centerX, y)
     
 
@@ -237,7 +348,7 @@ def drawContinueButton(app, x, y):
             continueButton['bottom'] - continueButton['top'], 
             fill="white",
             opacity=continueButton['opacity'])
-    drawLabel(app.message, x, y, size=10, font='montserrat', 
+    drawLabel(app.message, x, y, size=10, 
              fill=app.background, bold=True, align="center")
 
 #|************************| LIVEVIEW SCREEN |************************|#
@@ -249,51 +360,18 @@ def liveView_onScreenActivate(app):
 def liveView_onKeyPress(app, key):
     if key == 'm': 
         simulateShotMade(app)
-    elif key == 's':  # Record a missed shot
-        app.totalShots += 1
-        app.currentStreak = 0  # Reset streak on missed shot
-        updateShotPercentage(app)
+    elif key == 's':
+        simulateShotMissed(app)
 
 def liveView_onMousePress(app, x, y):
     tabPress(app, x, y)
 
-# Update shooting percentage based on makes/total
-def updateShotPercentage(app):
-    if app.totalShots > 0:
-        app.shotPercentage = (app.madeShots / app.totalShots) * 100
-    else:
-        app.shotPercentage = 0
+def liveView_onMouseMove(app, x, y):
+    tabHover(app, x, y)
 
-# Update consecutive makes streak
-def updateStreak(app, made):
-    if made:
-        app.currentStreak += 1
-        if app.currentStreak > app.bestStreak:
-            app.bestStreak = app.currentStreak
-    else:
-        app.currentStreak = 0
-
-# Converts frame to image URL displayable through CMU Graphics
-def convert_frame_to_url(frame):
-    temp_path = "tempFrame.jpg"
-    cv2.imwrite(temp_path, frame)
-    return temp_path
 
 def liveView_onStep(app):
     takeStep(app)
-
-def triggerEffects(app):
-    current_time = time.time()
-    visualEffects.trigger_fissure(app, current_time)
-    app.crowdSound.play(restart=False, loop=False)
-
-def simulateShotMade(app):
-    app.shotMade = True
-    app.madeShots += 1
-    app.totalShots += 1
-    updateShotPercentage(app)
-    updateStreak(app, True)
-    triggerEffects(app)
 
 def liveView_redrawAll(app):
     drawAssets(app)
@@ -301,21 +379,25 @@ def liveView_redrawAll(app):
     drawCameraFeed(app)
     drawShotStats(app)
 
-# Draw shot statistics and streak counters at the bottom of the screen
+# Draw shot stats and streak counters at the bottom of the screen
 def drawShotStats(app):
-    # Draw basic shot statistics
-    statsY = app.height - 20
-    drawLabel(f"Total Shots: {app.totalShots}", 
-             app.camFeedOutlineLeft + 5, statsY, 
-             size=12, font="Noto Sans", align="left", fill='white')
+    # Draw basic shot stats
+    statsY = app.height - 40
+    drawLabel(f"{app.madeShots}", 
+             app.camFeedOutlineLeft + 20, statsY, 
+             size=30, bold=True, align="center", fill='white')
     
-    drawLabel(f"Made Shots: {app.madeShots}", 
-             app.width//2, statsY, 
-             size=12, font="orbitron", align="center", fill='white')
+    drawLabel("MADE", app.camFeedOutlineLeft + 20, statsY + 25, size=8, bold=True, fill='white')
     
-    drawLabel(f"Shot %: {app.shotPercentage:.1f}%", 
-             app.camFeedOutlineLeft + app.camFeedOutlineWidth - 5, statsY, 
-             size=12, font="orbitron", align="right", fill='white')
+    drawLabel(f"{app.totalShots}", 
+             app.camFeedOutlineLeft + 110, statsY, 
+             size=30, bold=True, align="center", fill='white')
+    drawLabel("ATTEMPTS", app.camFeedOutlineLeft + 110, statsY + 25, size=8, bold=True, fill='white')
+
+    drawLabel(f"{app.shotPercentage:.1f}%", 
+             app.camFeedOutlineLeft + 210, statsY, 
+             size=30, bold=True, align="center", fill='white')
+    drawLabel("FG PERCENTAGE", app.camFeedOutlineLeft + 210, statsY + 25, size=8, bold=True, fill='white')
     
     # Draw streak information
     streakY = statsY - 25
@@ -323,11 +405,11 @@ def drawShotStats(app):
     
     drawLabel(f"Current Streak: {app.currentStreak}", 
              app.width//4, streakY, 
-             size=12, font="orbitron", align="center", fill=streakColor)
+             size=12, bold=True, align="center", fill=streakColor)
     
     drawLabel(f"Best Streak: {app.bestStreak}", 
              3*app.width//4, streakY, 
-             size=12, font="orbitron", align="center", fill='white')
+             size=12, bold=True, align="center", fill='white')
 
 # Draw camera feed with status indicators
 def drawCameraFeed(app):
@@ -346,46 +428,261 @@ def drawCameraFeed(app):
         outlineColor = gradient('lightSlateGray','white', 'lightskyblue', app.background)
 
     drawCircle(ballStatusX, statusY, statusRadius, fill=ballStatusColor)
-    drawLabel(ballStatusText, ballStatusX - 12, statusY, font="orbitron", size=10, align="right", fill='white')
+    drawLabel(ballStatusText, ballStatusX - 12, statusY, bold=True, size=10, align="right", fill='white')
     
     drawRect(app.camFeedOutlineLeft, app.camFeedOutlineTop, app.camFeedOutlineWidth, app.camFeedOutlineHeight, fill=outlineColor)
-    drawLabel(rimStatusText, app.camFeedOutlineLeft + 5, statusY, size=10, font="orbitron", align="left", fill='white')
+    drawLabel(rimStatusText, app.camFeedOutlineLeft + 5, statusY, size=10, bold=True, align="left", fill='white')
 
     if app.frameImage is not None:
         drawImage(app.frameImage, app.camFeedLeft, app.camFeedTop)
     else:
         drawRect(app.camFeedLeft, app.camFeedTop, app.camFeedWidth, app.camFeedHeight, fill=app.background)
-        drawLabel(app.message, centerX, centerY, size=12, fill='white')
+        drawLabel(app.message, centerX, centerY, size=12, bold=True, fill='white')
     
 #|************************| STATISTICS SCREEN |************************|#
 
-def statistics_onScreenActivate(app):
-    app.currentTab = 'statistics'
+def stats_onScreenActivate(app):
+    app.currentTab = 'stats'
 
-def statistics_onStep(app):
+def stats_onStep(app):
     takeStep(app)
 
-def statistics_onMousePress(app, x, y):
+def stats_onKeyPress(app, key):
+    if key == 'm': 
+        simulateShotMade(app)
+    elif key == 's':
+        simulateShotMissed(app)
+
+def stats_onMousePress(app, x, y):
     tabPress(app, x, y)
 
-def statistics_redrawAll(app):
+def stats_onMouseMove(app, x, y):
+    tabHover(app, x, y)
+    currentTime = time.time()
+    elapsedMinutes = (currentTime - app.sessionStartTime) / 60
+    timeWindow = max(elapsedMinutes, app.minGraphMinutes)
+    
+    app.hoveredPoint = None
+    for i, point in enumerate(app.graphPoints):
+        pointX = app.graphLeft + (point[0] / timeWindow) * app.graphWidth
+        pointY = app.graphTop + app.graphHeight - (point[1]/100 * app.graphHeight)
+        
+        # Check if mouse is within 10 pixels of point
+        if ((x - pointX)**2 + (y - pointY)**2) <= 100:
+            app.hoveredPoint = i
+            break
+
+def formatTimeLabel(minutes):
+    totalSeconds = int(minutes * 60)
+    mins = totalSeconds // 60
+    secs = totalSeconds % 60
+    if mins == 0:
+        return f"{secs}s"
+    elif secs == 0:
+        return f"{mins}m"
+    else:
+        return f"{mins}m {secs}s"
+    
+def formatTimeHeader(minutes):
+    totalSeconds = int(minutes * 60)
+    mins = totalSeconds // 60
+    secs = totalSeconds % 60
+    if secs < 10:
+        secs = f"0{secs}"
+    if mins < 10:
+        mins = f"0{mins}"
+    return f"{mins}:{secs}"
+
+def drawInfoBox(app, x, y, pointIndex, percentage, made, total):
+    boxWidth = 80
+    boxHeight = 75
+    padding = 10
+    
+    boxLeft = min(x + padding, app.graphLeft + app.graphWidth - boxWidth)
+    boxTop = min(y - boxHeight - padding, app.graphTop + app.graphHeight - boxHeight)
+    if boxTop < app.graphTop:
+        boxTop = y + padding
+
+    _, make, timestamp = app.shotHistory[pointIndex - 1]
+    timestamp = formatTimeHeader((timestamp - app.sessionStartTime) / 60)
+    outlineColor = 'limegreen' if make else 'crimson'
+    drawRect(boxLeft, boxTop, boxWidth, boxHeight, 
+            fill=app.background, opacity=90, border=outlineColor)
+
+
+    textY = boxTop + 12
+    drawLabel(f"SHOT {total}",
+            boxLeft + boxWidth/2, textY,
+            fill='white', size=12, bold=True)
+
+    textY += 15
+    drawLabel(f"MADE: {made}",
+             boxLeft + boxWidth/2, textY,
+             fill='white', size=9)
+    textY += 12
+    drawLabel(f"MISSED: {total - made}",
+             boxLeft + boxWidth/2, textY,
+             fill='white', size=9)
+    textY += 12
+    drawLabel(f"FG %: {percentage:.1f}%",
+             boxLeft + boxWidth/2, textY,
+             fill='white', size=9)
+    textY += 12
+    drawLabel(f"{timestamp}",
+             boxLeft + boxWidth/2, textY,
+             fill='white', size=9, bold=True)
+
+def drawPoint(app, x, y, isHovered, isCurrent=False):
+    baseRadius = 5
+    if isHovered:
+        # Draw shadow
+        drawCircle(x+1, y+1, baseRadius+2, fill='gray', opacity=40)
+        drawCircle(x, y, baseRadius+2, fill='white')
+    else:
+        drawCircle(x, y, baseRadius, fill='white')
+
+def drawGraph(app):
+    currentTime = time.time()
+    elapsedMinutes = (currentTime - app.sessionStartTime) / 60
+    timeWindow = max(elapsedMinutes, app.minGraphMinutes)
+    
+    drawRect(app.graphLeft, app.graphTop, app.graphWidth, app.graphHeight, 
+             fill=None, border='white')
+    
+    numTimeMarkers = 5
+    for i in range(numTimeMarkers + 1):
+        timeValue = (timeWindow * i) / numTimeMarkers
+        x = app.graphLeft + (i * app.graphWidth / numTimeMarkers)
+        timeLabel = formatTimeLabel(timeValue)
+        drawLabel(timeLabel, x, app.graphTop + app.graphHeight + 20,
+                 fill='white', bold=True, size=10)
+        if i > 0:
+            drawLine(x, app.graphTop, x, app.graphTop + app.graphHeight,
+                    fill='gray', opacity=30)
+    
+    drawLabel("TIME", 
+             app.graphLeft + app.graphWidth/2, 
+             app.graphTop + app.graphHeight + 35,
+             fill='white', bold=True, size=12)
+    drawLabel("FG %", 
+             app.graphLeft - 45, 
+             app.graphTop + app.graphHeight/2,
+             fill='white', bold=True, size=12, rotateAngle=270)
+    
+    for i in range(0, 101, 20):
+        y = app.graphTop + app.graphHeight - (i/100 * app.graphHeight)
+        drawLabel(f"{i}%", app.graphLeft - 10, y, 
+                 fill='white', bold=True, size=10, align='right')
+        drawLine(app.graphLeft, y, app.graphLeft + app.graphWidth, y,
+                fill='gray', opacity=30)
+    
+    if len(app.graphPoints) > 0:
+        x0 = app.graphLeft
+        x1 = app.graphLeft + (app.graphPoints[0][0] / timeWindow) * app.graphWidth
+        y1 = app.graphTop + app.graphHeight - (app.graphPoints[0][1]/100 * app.graphHeight)
+        drawLine(x0, y1, x1, y1, fill='lightBlue', lineWidth=2)
+        
+        for i in range(len(app.graphPoints)-1):
+            x1 = app.graphLeft + (app.graphPoints[i][0] / timeWindow) * app.graphWidth
+            y1 = app.graphTop + app.graphHeight - (app.graphPoints[i][1]/100 * app.graphHeight)
+            x2 = app.graphLeft + (app.graphPoints[i+1][0] / timeWindow) * app.graphWidth
+            y2 = app.graphTop + app.graphHeight - (app.graphPoints[i+1][1]/100 * app.graphHeight)
+            
+            drawLine(x1, y1, x2, y2, fill='lightBlue', lineWidth=2)
+            drawPoint(app, x1, y1, app.hoveredPoint == i)
+            
+            if app.hoveredPoint == i:
+                madeShots = int((app.graphPoints[i][1] / 100) * app.graphPoints[i][2])
+                drawInfoBox(app, x1, y1, i+1, app.graphPoints[i][1], 
+                          madeShots, app.graphPoints[i][2])
+        
+        lastX = app.graphLeft + (app.graphPoints[-1][0] / timeWindow) * app.graphWidth
+        lastY = app.graphTop + app.graphHeight - (app.graphPoints[-1][1]/100 * app.graphHeight)
+        currentX = app.graphLeft + (elapsedMinutes / timeWindow) * app.graphWidth
+        
+        drawLine(lastX, lastY, currentX, lastY, fill='lightBlue', lineWidth=2)
+        isLastPointHovered = app.hoveredPoint == len(app.graphPoints)-1
+        drawPoint(app, lastX, lastY, isLastPointHovered)
+        
+        if app.hoveredPoint is None:
+            drawInfoBox(app, lastX, lastY, len(app.graphPoints), 
+                       app.shotPercentage, app.madeShots, app.totalShots)
+        elif isLastPointHovered:
+            drawInfoBox(app, lastX, lastY, len(app.graphPoints),
+                       app.shotPercentage, app.madeShots, app.totalShots)
+
+def drawShotHistory(app):
+    currentTime = time.time()
+    elapsedMinutes = (currentTime - app.sessionStartTime) / 60
+
+    drawLabel(f"TIME ELAPSED",
+             app.historyLeft + app.historyWidth/2,
+             app.historyTop - 25,
+             bold=True,
+             fill='white', size=10)
+    timeLabel = formatTimeHeader(elapsedMinutes)
+    drawLabel(f"{timeLabel}",
+             app.historyLeft + app.historyWidth/2,
+             app.historyTop,
+             bold=True,
+             fill='white', size=40)
+
+    drawLabel(f"SHOT HISTORY",
+             app.historyLeft + app.historyWidth/2,
+             app.historyTop + 45,
+             bold=True,
+             fill='white', size=10)
+    shotHeight = 18
+    shotWidth = app.historyWidth - 40
+    startY = app.historyTop + 54
+
+    lastShots = app.shotHistory[-10:] if len(app.shotHistory) > 0 else []
+    lastShots.reverse()
+    for i, (shotNum, wasMade, timestamp) in enumerate(lastShots):
+        y = startY + (i * (shotHeight + 1))
+        shotColor = "limegreen" if wasMade else 'crimson'
+        shotText = "MAKE" if wasMade else "MISS"
+        shotTime = formatTimeHeader((timestamp - app.sessionStartTime) / 60)
+        
+        drawRect(app.historyLeft + 20, y, 
+                shotWidth, shotHeight,
+                fill=shotColor, opacity=90)
+        
+        drawLabel(shotText, 
+                 app.historyLeft + 20 + shotWidth/2, y + shotHeight/2,
+                 fill='white', size=10, bold=True, align='center')
+        drawLabel(f"{shotTime}", app.historyLeft + 25, y + shotHeight/2,
+                  fill='white', size=10, align='left', bold=True)
+    drawLine(app.historyLeft + 20, startY, app.historyLeft + 20 + shotWidth, startY, fill='white')
+    drawRect(app.historyLeft + 20, startY - 20, shotWidth, app.camFeedOutlineHeight - 64, fill=None, border='white')
+    
+def stats_redrawAll(app):
     drawAssets(app)
     drawTabButtons(app)
+    
+    # Draw graph and history panels
+    drawGraph(app)
+    drawShotHistory(app)
 
 #|************************| SOUNDS SCREEN |************************|#
 
 def sounds_onScreenActivate(app):
     app.currentTab = 'sounds'
 
-def statistics_onStep(app):
+def sounds_onStep(app):
     takeStep(app)
+
+def sounds_onMouseMove(app, x, y):
+    tabHover(app, x, y)
 
 def sounds_onMousePress(app, x, y):
     tabPress(app, x, y)
 
 def sounds_redrawAll(app):
+    centerX, centerY = app.width // 2, app.height // 2
     drawAssets(app)
     drawTabButtons(app)
+    drawLabel("Sounds Screen", centerX, centerY, fill="white")
 
 def main():
     runAppWithScreens(initialScreen='start')
