@@ -4,4 +4,4 @@ ultralytics
 numpy
 cmu-graphics
 pillow
-pygetwindow
+
