@@ -45,7 +45,7 @@ Session stats, streaks (hot/cold), and **exportable session logs**.
 
 To run the project, install these:
 
-- Python 3.x
+- Python 3.6-3.11 (cmu_graphics requirement)
 - OpenCV
 - PyTorch
 - Ultralytics
@@ -78,7 +78,7 @@ pip install -r requirements.txt
 ### 3️⃣ Run the App
 
 ```bash
-python src/backend/main.py
+python src/main.py
 ```
 
 ---
