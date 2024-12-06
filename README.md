@@ -52,6 +52,7 @@ To run the project, install these:
 - NumPy
 - CMU Graphics
 - Pillow
+- Pathlib
 
 ```bash
 pip install -r requirements.txt
