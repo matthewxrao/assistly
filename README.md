@@ -1,5 +1,5 @@
 ---
-# 🎯 **Assistly: Basketball Shot Tracking Application** 🏀
+# **Assistly: Basketball Companion** 🏀
 ---
 
 ## **Overview**
@@ -14,19 +14,19 @@ Assistly is your basketball companion app, tracking and analyzing shots in **rea
 
 ## **Features**
 
-### 🚀 Real-Time Detection
+###  Real-Time Detection
 
 Uses YOLO for **basketballs, rims, and shot events** detection.
 
-### 🏆 Shot Tracking
+### Shot Tracking
 
 Captures makes, misses, and **shooting percentages**.
 
-### 🎇 Dynamic Visual Effects
+### Dynamic Visual Effects
 
 Exciting animations, such as **lightning strikes** for streaks.
 
-### 🎵 Customizable Audio Feedback
+### Customizable Audio Feedback
 
 Choose sound themes:
 
@@ -35,7 +35,7 @@ Choose sound themes:
 - Minion Reactions
 - Cow Moos
 
-### 📈 Performance Analysis
+### Performance Analysis
 
 Session stats, streaks (hot/cold), and **exportable session logs**.
 
@@ -53,11 +53,7 @@ To run the project, install these:
 - CMU Graphics
 - Pillow
 - Pathlib
-
-```bash
-pip install -r requirements.txt
-```
-
+- 
 ---
 
 ## **Installation**
@@ -101,23 +97,6 @@ python src/main.py
    - Review detailed stats and **export data**.
 
 ---
-
-## **File Structure**
-
-```
-assistly/
-├── audios/             # Audio Packs (humans, dogs, minions, etc.)
-├── images/             # UI Graphics (logo, tips)
-├── tests/          # Unit Tests
-├── src/    # Core Application Logic
-│   ├── main.py           # Main Application
-│   ├── ekf.py            # Extended Kalman Filter (ball tracking)
-│   ├── loadAudios.py     # Audio Management
-│   ├── objectDetection.py# YOLO Detection
-│   └── visualEffects.py  # Dynamic Visuals
-├── requirements.txt    # Dependencies
-├── README.md           # Documentation
-```
 
 ## **Acknowledgments**
 
