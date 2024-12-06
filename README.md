@@ -108,8 +108,8 @@ python src/main.py
 assistly/
 ├── audios/             # Audio Packs (humans, dogs, minions, etc.)
 ├── images/             # UI Graphics (logo, tips)
-├── src/    # Core Application Logic
 ├── tests/          # Unit Tests
+├── src/    # Core Application Logic
 │   ├── main.py           # Main Application
 │   ├── ekf.py            # Extended Kalman Filter (ball tracking)
 │   ├── loadAudios.py     # Audio Management
