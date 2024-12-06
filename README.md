@@ -99,9 +99,6 @@ python src/main.py
 ---
 
 ## **Acknowledgments**
-
-- **YOLO Creators**: For enabling cutting-edge object detection.
-- **CMU Graphics**: For dynamic rendering tools.
 - **https://www.youtube.com/watch?v=9X3jGGnbcvU & https://automaticaddison.com/extended-kalman-filter-ekf-with-python-code-example/ for help on implementing Extended Kalman Filter** 
 - **https://www.101soundboards.com/ for soundboard**
 - **https://vectr.com/ for all graphic assets**
