@@ -94,6 +94,8 @@ python src/backend/main.py
 2. **Analyze in Real-Time**:
 
    - View annotated stats and enjoy **effects**.
+   - Press 'm' to simulate a made shot, 's' to simulate a missed shot, and 'f' to end your current session and view the session summary.
+
 
 3. **Session Summary**:
    - Review detailed stats and **export data**.
@@ -106,40 +108,25 @@ python src/backend/main.py
 assistly/
 ├── audios/             # Audio Packs (humans, dogs, minions, etc.)
 ├── images/             # UI Graphics (logo, tips)
-├── src/
-│   ├── backend/        # Core Application Logic
-│   │   ├── main.py           # Main Application
-│   │   ├── ekf.py            # Extended Kalman Filter (ball tracking)
-│   │   ├── loadAudios.py     # Audio Management
-│   │   ├── objectDetection.py# YOLO Detection
-│   │   ├── visualEffects.py  # Dynamic Visuals
-│   └── tests/          # Unit Tests
+├── src/    # Core Application Logic
+├── tests/          # Unit Tests
+│   ├── main.py           # Main Application
+│   ├── ekf.py            # Extended Kalman Filter (ball tracking)
+│   ├── loadAudios.py     # Audio Management
+│   ├── objectDetection.py# YOLO Detection
+│   └── visualEffects.py  # Dynamic Visuals
 ├── requirements.txt    # Dependencies
 ├── README.md           # Documentation
 ```
-
----
-
-## **Contributing**
-
-### 🛠️ Steps to Contribute:
-
-1. **Fork the Repository**.
-2. **Add Your Feature**: Create a branch.
-3. **Pull Request**: Submit with descriptions.
-
----
-
-## **License**
-
-Licensed under the **MIT License**. See `LICENSE` for details.
-
----
 
 ## **Acknowledgments**
 
 - **YOLO Creators**: For enabling cutting-edge object detection.
 - **CMU Graphics**: For dynamic rendering tools.
+- **https://www.youtube.com/watch?v=9X3jGGnbcvU & https://automaticaddison.com/extended-kalman-filter-ekf-with-python-code-example/ for help on implementing Extended Kalman Filter** 
+- **https://www.101soundboards.com/ for soundboard**
+- **https://vectr.com/ for all graphic assets**
+- **ChatGPT for debugging, particularly with getting pillow to work with my computer**
 
 ---
 
