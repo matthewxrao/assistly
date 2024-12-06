@@ -1169,11 +1169,54 @@ def session_onMouseMove(app, x, y):
     """
     Handle mouse movement on the session screen, including hovering over the export button.
     """
+    
     if (app.exportButton['left'] <= x <= app.exportButton['right'] and 
         app.exportButton['top'] <= y <= app.exportButton['bottom']):
         app.exportButton['opacity'] = 80
     else:
         app.exportButton['opacity'] = 100
+    
+
+    if app.manualMode:
+        graphLeft = 50
+        graphTop = 140
+        graphWidth = app.width//2 - 75
+        graphHeight = 200
+    else:
+        graphLeft = 60
+        graphTop = 140
+        graphWidth = app.width - 100
+        graphHeight = 200
+    
+    # Check if mouse is within graph bounds
+    if (graphLeft <= x <= graphLeft + graphWidth and 
+        graphTop <= y <= graphTop + graphHeight):
+        
+        # Find nearest point
+        app.sessionHoveredPoint = None
+        if len(app.graphPoints) > 0:
+            for i, point in enumerate(app.graphPoints):
+                pointX = graphLeft + (point[0] / app.graphPoints[-1][0]) * graphWidth
+                pointY = graphTop + graphHeight - (point[1] / 100) * graphHeight
+                
+                if ((x - pointX)**2 + (y - pointY)**2) <= 100:  # 10px radius
+                    app.sessionHoveredPoint = i
+                    break
+    else:
+        app.sessionHoveredPoint = None
+
+def drawExportButton(app):
+    """
+    Draws the export button on the session screen.
+    """
+    drawRect(app.exportButton['left'], app.exportButton['top'], 
+             app.exportButton['right'] - app.exportButton['left'], 
+             app.exportButton['bottom'] - app.exportButton['top'], 
+             fill='white', opacity=app.exportButton['opacity'])
+    drawLabel("EXPORT", 
+              (app.exportButton['left'] + app.exportButton['right']) / 2,
+              (app.exportButton['top'] + app.exportButton['bottom']) / 2,
+              size=10, bold=True, fill=app.background, align='center')
 
 def drawExportButton(app):
     """
