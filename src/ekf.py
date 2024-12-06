@@ -1,6 +1,9 @@
 import numpy as np
 
 class ExtendedKalmanFilter:
+    # https://www.youtube.com/watch?v=9X3jGGnbcvU & https://automaticaddison.com/extended-kalman-filter-ekf-with-python-code-example/ taught me the math behind the Extended Kalman Filter 
+    # Implementation was done by me
+
     def __init__(self, dt=1.0, process_noise_std=1.0, measurement_noise_std=1.0):
         # State vector [x, y, vx, vy]
         self.x = np.zeros((4, 1))  # Initial state

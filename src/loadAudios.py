@@ -1,6 +1,7 @@
 import pathlib
 import random
 
+# All audios are from https://www.101soundboards.com/
 
 humanPath = pathlib.Path('audios/humans').resolve()
 humanAudios = [file.as_uri() for file in humanPath.glob('*.mp3')]

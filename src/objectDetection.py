@@ -43,7 +43,7 @@ def detectObjects(frame, outputWidth, outputHeight, ekf):
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cls = int(box.cls[0])
 
-            if cls == 2 or cls == 4:  # Skip detection for "Person" and "Shot" class
+            if cls == 2 or cls == 4:  # Skip detection for "Person" class
                 continue
 
             color = None

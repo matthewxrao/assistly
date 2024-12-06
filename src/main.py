@@ -398,8 +398,8 @@ def getFrames(app):
     """
     Continuously read frames from a video source, perform object detection, and enqueue results.
     """
-    video = 'tests/test1.mp4'
-    cam = cv2.VideoCapture(video) 
+    video = 'tests/test7.mp4'
+    cam = cv2.VideoCapture(0) 
 
     if not cam.isOpened():
         print("Error: Could not open video.")
