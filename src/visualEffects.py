@@ -218,42 +218,42 @@ def init_fissure(app):
     app.fissures = [
         LightningStrike(
             app.width * 0.2,
-            10,
+            0,
             max_length=app.height * 0.9, 
             duration=0.5,
             lean_direction=1
         ),
         LightningStrike(
             app.width * 0.4,
-            10,
+            0,
             max_length=app.height * 0.9,
             duration=0.5,
             lean_direction=-0.5
         ),
         LightningStrike(
             app.width * 0.6,
-            10,
+            0,
             max_length=app.height * 0.3,
             duration=0.5,
             lean_direction=1
         ),
         LightningStrike(
             app.width * 0.6,
-            10,
+            0,
             max_length=app.height * 0.4,
             duration=0.5,
             lean_direction=0.5
         ),
         LightningStrike(
             app.width * 0.6,
-            10,
+            0,
             max_length=app.height * 0.3,
             duration=0.5,
             lean_direction=0.5
         ),
         LightningStrike(
             app.width * 0.6,
-            10,
+            0,
             max_length=app.height * 0.4,
             duration=0.5,
             lean_direction=-1

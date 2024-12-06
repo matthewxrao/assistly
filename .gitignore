@@ -1,4 +1,9 @@
 .python-version
+src/__pycache__
+
 tempFrame.jpg
-/tests/
-c.py
+
+/tests/test2.mp4
+/tests/test3.mp4
+/tests/test4.mp4
+/tests/test5.mp4

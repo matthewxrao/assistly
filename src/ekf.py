@@ -57,5 +57,5 @@ class ExtendedKalmanFilter:
     def set_state(self, x, y, est_x, est_y):
         self.state = np.array([[x], [y], [est_x], [est_y]])
 
-    def get_state(self):
-        return self.x.flatten()
+    def get_state(self, x, y):
+        return x, y, self.x[2][0], self.x[3][0]

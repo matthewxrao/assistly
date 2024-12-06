@@ -1,9 +1,6 @@
-# objectdetection.py
-
 from ultralytics import YOLO
 import cv2
 import numpy as np
-from c import v
 from ekf import ExtendedKalmanFilter
 
 # Initialize YOLO model
@@ -34,7 +31,7 @@ def detectObjects(frame, outputWidth, outputHeight, ekf):
     ballDetected = False
     rimDetected = False
     shotMadeDetected = False
-    p = 0
+    cx, cy, radius = 0, 0, 0
 
     # Variables to store ball measurements
     ball_measurements = []
@@ -52,11 +49,10 @@ def detectObjects(frame, outputWidth, outputHeight, ekf):
             color = None
             if cls == 0:  # Ball
                 ballDetected = True 
-                center_x = int((x1 + x2) / 2)
-                center_y = int((y1 + y2) / 2)
+                cx = int((x1 + x2) / 2)
+                cy = int((y1 + y2) / 2)
                 radius = int(abs(x2 - x1) / 2)
-                p = v(outputFrame, (center_x, center_y), radius)
-                ball_measurements.append(np.array([center_x, center_y]))
+                ball_measurements.append(np.array([cx, cy]))
             elif cls == 3:  # Rim
                 rimDetected = True
                 color = (0, 0, 255)
@@ -81,9 +77,9 @@ def detectObjects(frame, outputWidth, outputHeight, ekf):
         pass
 
     # Get current state estimate
-    state = ekf.get_state()
+    state = ekf.get_state(cx, cy)
     est_x, est_y, __, ___ = state
 
-    cv2.circle(frame, (int(est_x), int(est_y)), p, (255, 255, 255), p)
+    cv2.circle(outputFrame, (int(est_x), int(est_y)), radius, (0, 255, 0), 2)
 
     return ballDetected, rimDetected, shotMadeDetected, outputFrame
