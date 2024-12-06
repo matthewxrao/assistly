@@ -52,7 +52,6 @@ To run the project, install these:
 - NumPy
 - CMU Graphics
 - Pillow
-- PyGetWindow
 
 ```bash
 pip install -r requirements.txt
