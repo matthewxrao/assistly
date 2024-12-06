@@ -4,4 +4,5 @@ ultralytics
 numpy
 cmu-graphics
 pillow
+pathlib
 
