@@ -1,5 +1,5 @@
 ---
-# **Assistly: Basketball Companion** 🏀
+# **assistly** 
 ---
 
 ## **Overview**
@@ -53,7 +53,6 @@ To run the project, install these:
 - CMU Graphics
 - Pillow
 - Pathlib
-- 
 ---
 
 ## **Installation**
@@ -95,6 +94,13 @@ python src/main.py
 
 3. **Session Summary**:
    - Review detailed stats and **export data**.
+
+---
+
+
+Recognized 2nd out of 441 Students at 15-112 Fall 2024 Term Project Showcase.
+
+Youtube Link: https://youtu.be/a7-833gmraQ
 
 ---
 
